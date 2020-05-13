@@ -1,54 +1,13 @@
 use super::Float;
-use super::Wavetable;
-use super::WtManager;
 use super::WavetableRef;
 
-use serde::{Serialize, Deserialize};
-
 use log::{info, trace, warn};
-
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default)]
-pub struct WtOscData {
-    pub level: Float,
-    pub tune_halfsteps: i64,
-    pub tune_cents: Float,
-    pub freq_offset: Float, // Value derived from tune_halfsteps and tune_cents
-    pub wave_index: Float, // Index into the wave tables
-    pub wavetable: usize,
-}
-
-impl WtOscData {
-    pub fn init(&mut self) {
-        self.level = 0.92;
-        self.set_halfsteps(0);
-        self.wave_index = 0.0;
-    }
-
-    /** Coarse tuning of oscillator (+/- 2 octaves). */
-    pub fn set_halfsteps(&mut self, halfsteps: i64) {
-        self.tune_halfsteps = halfsteps;
-        self.calc_freq_offset();
-    }
-
-    /** Fine tuning of oscillator (+/- 1 halfsteps). */
-    pub fn set_cents(&mut self, cents: Float) {
-        self.tune_cents = cents;
-        self.calc_freq_offset();
-    }
-
-    /** Calculate resulting frequency of tuning settings. */
-    fn calc_freq_offset(&mut self) {
-        let inc: Float = 1.059463;
-        self.freq_offset = inc.powf(self.tune_halfsteps as Float + self.tune_cents);
-    }
-}
 
 const NUM_SAMPLES_PER_TABLE: usize = 2048;
 const NUM_VALUES_PER_TABLE: usize = NUM_SAMPLES_PER_TABLE + 1; // Add one sample for easier interpolation on last sample
 
 pub struct WtOsc {
     pub sample_rate: Float,
-    pub id: usize,
     last_update: i64, // Time of last sample generation
     last_sample: Float,
     last_pos: Float,
@@ -57,24 +16,20 @@ pub struct WtOsc {
 
 /** Wavetable oscillator implementation.
  *
- * The WT oscillator uses multiple tables per waveform to avoid aliasing. Each
- * table is filled by adding all harmonics that will not exceed the Nyquist
- * frequency for the given usable range of the table (one octave).
+ * This is a sample implementation of a wavetable oscillator.
  */
 impl WtOsc {
 
     /** Create a new wavetable oscillator.
      *
      * \param sample_rate The global sample rate of the synth
-     * \param id The voice ID of the oscillator (0 - 2)
      */
-    pub fn new(sample_rate: u32, id: usize, wave: WavetableRef) -> WtOsc {
+    pub fn new(sample_rate: u32, wave: WavetableRef) -> WtOsc {
         let sample_rate = sample_rate as Float;
         let last_update = 0;
         let last_sample = 0.0;
         let last_pos = 0.0;
         WtOsc{sample_rate,
-              id,
               last_update,
               last_sample,
               last_pos,
@@ -126,7 +81,7 @@ impl WtOsc {
         0
     }
 
-    pub fn tick(&mut self, frequency: Float, sample_clock: i64, data: &WtOscData, reset: bool) -> Float {
+    pub fn tick(&mut self, frequency: Float, sample_clock: i64, wave_index: Float, reset: bool) -> Float {
         if reset {
             self.reset(sample_clock - 1);
         }
@@ -148,7 +103,8 @@ impl WtOsc {
             self.last_pos -= NUM_SAMPLES_PER_TABLE as Float;
         }
 
-        let translated_index = (self.wave.table.len() - 1) as Float * data.wave_index;
+        // TODO: Improve interpolation
+        let translated_index = (self.wave.table.len() - 1) as Float * wave_index;
         let lower_wave = translated_index as usize;
         let lower_wave_float = lower_wave as Float;
         let lower_fract: Float = 1.0 - (translated_index - lower_wave_float);
