@@ -2,15 +2,18 @@
 #![allow(unused_imports)]
 
 mod wavetable;
+mod wt_creator;
 mod wt_manager;
 mod wt_oscillator;
 mod wt_reader;
 
-use wavetable::{Wavetable, WavetableRef};
-use wt_manager::WtManager;
+pub use wavetable::{Wavetable, WavetableRef};
+use wt_creator::WtCreator;
+pub use wt_manager::WtManager;
+pub use wt_oscillator:: WtOsc;
 use wt_reader::WtReader;
 
-type Float = f64;
+pub type Float = f64;
 
 #[cfg(test)]
 mod tests {

@@ -1,14 +1,13 @@
-/* A wavetable representing a collection of waveshapes.
- *
- * A wavetable consists of a collection of waveshapes. Every waveshape in the
- * wavetable itself contains multiple bandlimited tables for use in different
- * octaves.
- *
- * In memory, the table is stored as a vector of vectors. The inner vector
- * holds the samples of a single waveshape, with the different octave tables
- * octaves stored as a contiguous piece of memory. The outer vector holds the
- * different waveshapes.
- */
+//! A wavetable representing a collection of waveshapes.
+//!
+//! A wavetable consists of a collection of waveshapes. Every waveshape in the
+//! wavetable itself contains multiple bandlimited tables for use in different
+//! octaves.
+//!
+//! In memory, the table is stored as a vector of vectors. The inner vector
+//! holds the samples of a single waveshape, with the different octave tables
+//! stored as a contiguous piece of memory. The outer vector holds the different
+//! waveshapes.
 
 use super::Float;
 
@@ -30,7 +29,7 @@ impl Wavetable {
     pub fn new(num_tables: usize, num_octaves: usize, num_samples: usize) -> Wavetable {
         let num_values = num_samples + 1;
         let table = vec!(vec!(0.0; num_values * num_octaves); num_tables);
-        info!("New Wavetable: {} tables for {} octaves, {} samples",
+        debug!("New Wavetable: {} tables for {} octaves, {} samples",
               num_tables, num_octaves, num_samples);
         Wavetable {
             num_tables,
@@ -43,7 +42,7 @@ impl Wavetable {
 
     pub fn new_from_vector(num_tables: usize, num_octaves: usize, num_samples: usize, table: Vec<Vec<Float>>) -> WavetableRef {
         let num_values = num_samples + 1;
-        info!("New Wavetable: {} tables for {} octaves, {} samples",
+        debug!("New Wavetable: {} tables for {} octaves, {} samples",
               num_tables, num_octaves, num_samples);
         Arc::new(Wavetable {
             num_tables,
@@ -52,22 +51,6 @@ impl Wavetable {
             num_samples,
             table
         })
-    }
-
-    pub fn copy_inverted(&self) -> WavetableRef {
-        let table_copy = self.table.to_vec();
-        let mut out = Wavetable{
-            num_tables: self.num_tables,
-            num_octaves: self.num_octaves,
-            num_values: self.num_values,
-            num_samples: self.num_samples,
-            table: table_copy};
-        for t in &mut out.table {
-            for j in 0..t.len() {
-                t[j] = t[j] * -1.0;
-            }
-        }
-        Arc::new(out)
     }
 
     /** Return a table vector for the selected waveshape. */
@@ -97,7 +80,7 @@ impl Wavetable {
         num_harmonics
     }
 
-    /** Add a wave with given frequency to the wave in a table.
+    /** Add a wave with given frequency to a table.
      *
      * Frequency is relative to the buffer length, so a value of 1 will put one
      * wave period into the table. The values are added to the values already
@@ -111,7 +94,8 @@ impl Wavetable {
      * returning a value in the same range.
      */
     fn add_wave(table: &mut [Float], freq: Float, amplitude: Float, wave_func: fn(Float) -> Float) {
-        let num_samples = table.len() - 1;
+        let extra_sample = table.len() & 0x01;
+        let num_samples = table.len() - extra_sample;
         let num_samples_f = num_samples as Float;
         let mult = freq * 2.0 * std::f64::consts::PI;
         let mut position: Float;
@@ -119,7 +103,9 @@ impl Wavetable {
             position = mult * (i as Float / num_samples_f);
             table[i] = table[i] + wave_func(position) * amplitude;
         }
-        table[table.len() - 1] = table[0]; // Add extra sample for interpolation
+        if extra_sample > 0 {
+            table[table.len() - 1] = table[0]; // Add extra sample for easy interpolation
+        }
     }
 
     /** Add a sine wave with given frequency and amplitude to the buffer. */
@@ -138,7 +124,7 @@ impl Wavetable {
      * insert function to insert waveforms into them. Each table serves the
      * frequency range of one octave.
      */
-    pub fn create_tables(&mut self,
+    pub fn insert_tables(&mut self,
                          table_id: usize,
                          start_freq: Float,
                          sample_freq: Float,
@@ -184,7 +170,6 @@ impl Wavetable {
                     index_b -= num_samples;
                 }
                 table[j] = table_a[j] - table_b[index_b];
-                //info!("{}, {}: {} - {} = {}", j, index_b, table_a[j], table_b[index_b], table[j]);
             }
             Wavetable::expand(&mut table[from..to]);
         }

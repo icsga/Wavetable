@@ -1,3 +1,5 @@
+//! A simple example oscillator using wavetables.
+
 use super::Float;
 use super::WavetableRef;
 
@@ -14,18 +16,13 @@ pub struct WtOsc {
     wave: WavetableRef,
 }
 
-/** Wavetable oscillator implementation.
- *
- * This is a sample implementation of a wavetable oscillator.
- */
 impl WtOsc {
 
-    /** Create a new wavetable oscillator.
-     *
-     * \param sample_rate The global sample rate of the synth
-     */
-    pub fn new(sample_rate: u32, wave: WavetableRef) -> WtOsc {
-        let sample_rate = sample_rate as Float;
+    /// Create a new wavetable oscillator.
+    ///
+    /// \param sample_rate The global sample rate of the synth
+    ///
+    pub fn new(sample_rate: Float, wave: WavetableRef) -> WtOsc {
         let last_update = 0;
         let last_sample = 0.0;
         let last_pos = 0.0;
@@ -36,21 +33,22 @@ impl WtOsc {
               wave}
     }
 
+    /// Set the wavetable to use for sound generation.
     pub fn set_wavetable(&mut self, wavetable: WavetableRef) {
         self.wave = wavetable;
     }
 
-    /** Interpolate between two sample values with the given ratio. */
+    // Interpolate between two sample values with the given ratio.
     fn interpolate(val_a: Float, val_b: Float, ratio: Float) -> Float {
         val_a + ((val_b - val_a) * ratio)
     }
 
-    /** Get a sample from the given table at the given position.
-     *
-     * Uses linear interpolation for positions that don't map directly to a
-     * table index.
-     */
-    fn get_sample(table: &[Float], table_index: usize, position: Float) -> Float {
+    // Get a sample from the given table at the given position.
+    //
+    // Uses linear interpolation for positions that don't map directly to a
+    // table index.
+    //
+    fn calc_sample(table: &[Float], table_index: usize, position: Float) -> Float {
         let floor_pos = position as usize;
         let frac = position - floor_pos as Float;
         let position = floor_pos + table_index * NUM_VALUES_PER_TABLE;
@@ -68,7 +66,7 @@ impl WtOsc {
         }
     }
 
-    /* Look up the octave table matching the current frequency. */
+    // Look up the octave table matching the current frequency.
     fn get_table_index(num_octaves: usize, freq: Float) -> usize {
         let two: Float = 2.0;
         let mut compare_freq = (440.0 / 32.0) * (two.powf((-9.0) / 12.0));
@@ -81,7 +79,14 @@ impl WtOsc {
         0
     }
 
-    pub fn tick(&mut self, frequency: Float, sample_clock: i64, wave_index: Float, reset: bool) -> Float {
+    /// Get the next sample for the given frequency and sample clock.
+    ///
+    /// Frequency is given in Hz, sample_clock is the number of ticks of the
+    /// sample_rate that elapsed since initializing the oscillator. Usually
+    /// this value would be incremented by 1 every time this function is
+    /// called.
+    ///
+    pub fn get_sample(&mut self, frequency: Float, sample_clock: i64, wave_index: Float, reset: bool) -> Float {
         if reset {
             self.reset(sample_clock - 1);
         }
@@ -112,9 +117,9 @@ impl WtOsc {
 
         let table_index = WtOsc::get_table_index(self.wave.num_octaves, frequency);
 
-        let mut result = WtOsc::get_sample(&self.wave.table[lower_wave], table_index, self.last_pos) * lower_fract;
+        let mut result = WtOsc::calc_sample(&self.wave.table[lower_wave], table_index, self.last_pos) * lower_fract;
         if upper_fract > 0.0 {
-            result += WtOsc::get_sample(&self.wave.table[lower_wave + 1], table_index, self.last_pos) * upper_fract;
+            result += WtOsc::calc_sample(&self.wave.table[lower_wave + 1], table_index, self.last_pos) * upper_fract;
         }
         self.last_update += dt;
         self.last_sample = result;
