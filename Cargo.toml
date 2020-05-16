@@ -7,7 +7,6 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-flexi_logger = "0.14"
 log = "0.4"
 rustfft = "*"
 serde = { version = "1.0", features = ["derive"] }
