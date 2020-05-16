@@ -1,7 +1,9 @@
 //! Manages access to wavetables.
 //!
-//! Has a cache with wavetables, handing references out to clients asking for
-//! a table.
+//! The wavetable manager is a central place for managing wavetable
+//! instances. It holds wavetables in a cache, handing references to them to
+//! clients, thereby avoiding the need for multiple instances of a single
+//! table.
 
 use super::Float;
 use super::{Wavetable, WavetableRef};
@@ -16,6 +18,14 @@ use std::sync::Arc;
 
 const NUM_PWM_TABLES: usize = 64;
 
+/// Identifies a wavetable.
+///
+/// The ID is an internal identifier used for referencing the table.
+/// The valid flag is set to true if the wavetable was initialized
+/// successfully, false otherwise.
+/// The name is a string that can be displayed to the user. It is usually the
+/// filename without the path.
+/// The filename is the full patch to the wave file
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WtInfo {
     pub id: usize,       // ID of wavetable, used as reference
@@ -49,10 +59,13 @@ impl WtManager {
 
     /// Add table containing basic waveshapes with the given ID.
     ///
-    /// The wavetable added will contain waves for sine, triangle, saw and
-    /// square, 2048 samples per wave, bandlimited with one table per octave,
-    /// for 11 octaves, covering the full range of MIDI notes for standard
-    /// tuning.
+    /// The wavetable added will contain data for sine, triangle, saw and
+    /// square waves, 2048 samples per wave, bandlimited with one table per
+    /// octave, for 11 octaves, covering the full range of MIDI notes for
+    /// standard tuning.
+    ///
+    /// The wave indices to use for querying sine, triangle, saw and square
+    /// are 0.0, 1/3, 2/3 and 1.0 respectively.
     ///
     /// ```
     /// use wavetable::WtManager;
@@ -108,6 +121,11 @@ impl WtManager {
     /// The WtInfo::valid flag is set to true if loading was successfull, false
     /// if it failed.
     ///
+    /// If the flag bandlimit is set to true, the table will automatically be
+    /// converted to a bandlimited version, consisting of 11 tables per wav
+    /// shape with reduced number of harmonics, which means the data will
+    /// consume 11 times more memory than the un-bandlimited version.
+    ///
     /// ```
     /// use wavetable::{WtManager, WtInfo};
     ///
@@ -123,13 +141,20 @@ impl WtManager {
     /// } else {
     ///     panic!();
     /// };
-    /// wt_manager.load_table(&mut wt_info, fallback);
+    /// wt_manager.load_table(&mut wt_info, fallback, false);
     /// ```
-    pub fn load_table(&mut self, wt_info: &mut WtInfo, fallback: WavetableRef) {
+    pub fn load_table(&mut self, wt_info: &mut WtInfo, fallback: WavetableRef, bandlimit: bool) {
         let result = self.reader.read_file(&wt_info.filename);
         let table = if let Ok(wt) = result {
             wt_info.valid = true;
-            wt
+            if bandlimit {
+                let harmonics = wt.convert_to_harmonics(1024);
+                let mut wt_bandlimited = Wavetable::new(wt.table.len(), 11, 2048);
+                wt_bandlimited.insert_harmonics(&harmonics, self.sample_rate).unwrap();
+                Arc::new(wt_bandlimited)
+            } else {
+                wt
+            }
         } else {
             wt_info.valid = false;
             fallback.clone()

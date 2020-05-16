@@ -7,13 +7,13 @@ pub mod wavetable;
 pub mod wt_creator;
 pub mod wt_manager;
 pub mod wt_oscillator;
-mod wt_reader;
+pub mod wt_reader;
 
 pub use self::wavetable::{Wavetable, WavetableRef};
 pub use wt_creator::WtCreator;
 pub use wt_manager::{WtManager, WtInfo};
 pub use wt_oscillator:: WtOsc;
-use wt_reader::WtReader;
+pub use wt_reader::WtReader;
 
 pub type Float = f64;
 

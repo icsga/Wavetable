@@ -1,8 +1,11 @@
-//! Creates wavetables.
+//! Creates common wavetables.
 //!
 //! Supports generating some default waveshapes. In the future, it will also
 //! support generating tables from alternative sources (algorithms, lists of
 //! harmonics etc.).
+//!
+//! Currently it supports the wave shapes sine, triangle, saw and square, plus
+//! pulse width modulated square waves.
 
 use super::Float;
 use super::{Wavetable, WavetableRef};
@@ -80,12 +83,6 @@ impl WtCreator {
         Wavetable::normalize(table);
     }
 
-    // Calculate the start frequency to use for wave creation.
-    fn get_start_frequency(base_freq: Float) -> Float {
-        let two: Float = 2.0;
-        (base_freq / 32.0) * (two.powf((-9.0) / 12.0))
-    }
-
     /// Create collection of tables with common waveforms.
     ///
     /// The added waveforms are sine, triangle, saw and square. It will generate
@@ -99,7 +96,7 @@ impl WtCreator {
     pub fn create_default_waves(sample_rate: Float) -> WavetableRef {
         debug!("Initializing default waveshapes");
         let mut wt = Wavetable::new(4, 11, 2048);
-        let start_freq = WtCreator::get_start_frequency(440.0);
+        let start_freq = Wavetable::get_start_frequency(440.0);
         wt.insert_tables(0, start_freq, sample_rate, WtCreator::insert_sine);
         wt.insert_tables(1, start_freq, sample_rate, WtCreator::insert_tri);
         wt.insert_tables(2, start_freq, sample_rate, WtCreator::insert_saw);
@@ -123,7 +120,7 @@ impl WtCreator {
         // Create temporary table containing a saw waveshape
         let num_samples = 2048;
         let mut saw_wt = Wavetable::new(1, 11, num_samples);
-        let start_freq = WtCreator::get_start_frequency(440.0);
+        let start_freq = Wavetable::get_start_frequency(440.0);
         saw_wt.insert_tables(0, start_freq, sample_rate, WtCreator::insert_saw);
 
         let saw_wave = &saw_wt.table[0];

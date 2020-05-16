@@ -2,17 +2,28 @@
 //!
 //! A wavetable consists of a collection of waveshapes. Every waveshape in the
 //! wavetable itself contains multiple bandlimited tables for use in different
-//! octaves.
+//! octaves. Every octave table is a vector of usually 2048 values
+//! representing a single wave cycle.
 //!
 //! In memory, the table is stored as a vector of vectors. The inner vector
-//! holds the samples of a single waveshape, with the different octave tables
+//! holds the samples of a single wave cycle, with the different octave tables
 //! stored as a contiguous piece of memory. The outer vector holds the different
 //! waveshapes.
+//!
+//! An oscillator using a wavetable then needs three positions to calculate a
+//! sample: The wave index, which determines which waveshape table to use, the
+//! current octave, which determines the octave table to use, and the position
+//! inside the single wave cycle. Both the wave index and the position are float
+//! values, which means some interpolation is required to get the final sample.
 
 use super::Float;
 
 use log::{info, debug, trace, warn};
+use rustfft::FFTplanner;
+use rustfft::num_complex::Complex;
+use rustfft::num_traits::Zero;
 
+use std::cmp;
 use std::sync::Arc;
 
 pub struct Wavetable {
@@ -77,25 +88,31 @@ impl Wavetable {
         })
     }
 
-    /// Return a table vector for the selected index.
+    /// Return the waveshape at the given index.
+    ///
+    /// This will return the vector containing all octave tables for a single
+    /// waveshape in the Wavetable.
     ///
     /// ```
     /// use wavetable::Wavetable;
-    ///
-    /// let wt = Wavetable::new(4, 11, 2048);
-    /// let first_wave = wt.get_wave(0);
+    /// 
+    /// let wt = Wavetable::new(4, 11, 2048); // Allocate a Wavetable for 4 waveshapes
+    /// let first_wave = wt.get_wave(0);      // Get the vector holding the first waveshape
     /// ```
     pub fn get_wave(&self, wave_id: usize) -> &Vec<Float> {
         &self.table[wave_id]
     }
 
-    /// Return a mutable table vector for the selected waveshape.
+    /// Return a mutable vector for the selected waveshape.
+    ///
+    /// This will return a mutable vector containing all octave tables for a
+    /// single waveshape in the Wavetable.
     ///
     /// ```
     /// use wavetable::Wavetable;
     ///
-    /// let wt = Wavetable::new(4, 11, 2048);
-    /// let mut first_wave = wt.get_wave(0);
+    /// let mut wt = Wavetable::new(4, 11, 2048);    // Allocate a Wavetable for 4 waveshapes
+    /// let mut second_wave = wt.get_wave_mut(1); // Get the vector holding the second waveshape
     /// ```
     pub fn get_wave_mut(&mut self, wave_id: usize) -> &mut Vec<Float> {
         &mut self.table[wave_id]
@@ -118,10 +135,70 @@ impl Wavetable {
     /// ```
     pub fn calc_num_harmonics(base_freq: Float, sample_freq: Float) -> usize {
         let nyquist_freq = sample_freq / 2.0;
+        if base_freq > nyquist_freq {
+            return 0;
+        }
         let num_harmonics = (nyquist_freq / base_freq) as usize - 1; // Don't count the base frequency itself
         debug!("Base frequency {}: {} harmonics, highest at {} Hz with sample frequency {}",
             base_freq, num_harmonics, base_freq * (num_harmonics + 1) as Float, sample_freq);
         num_harmonics
+    }
+
+    /// Convert a wavetable to a vector of harmonics lists.
+    ///
+    /// Creates one harmonic list for each waveshape in the table. The result
+    /// will contain at most <num_harmonics> harmonics in the list.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    /// use wavetable::WtManager;
+    ///
+    /// let mut wt_manager = WtManager::new(44100.0, "data");
+    /// wt_manager.add_basic_tables(0);
+    /// let wt = if let Some(table) = wt_manager.get_table(0) { table } else { panic!(); };
+    /// let harmonics = wt.convert_to_harmonics(1300);
+    /// ```
+    pub fn convert_to_harmonics(&self, num_harmonics: usize) -> Vec<Vec<Float>> {
+        // Allocate memory
+        let mut harmonics = vec![vec![0.0; num_harmonics]; self.table.len()];
+
+        // Prepare FFT
+        let mut input: Vec<Complex<Float>> = vec![Complex::zero(); 2048];
+        let mut output: Vec<Complex<Float>> = vec![Complex::zero(); 2048];
+        let mut planner = FFTplanner::new(false);
+        let fft = planner.plan_fft(2048);
+        let mut value: Float;
+
+        // For all waveshapes in the Wavetable
+        for i in 0..self.table.len() {
+
+            // Copy wave to input.
+            // We're only checking octave table 1, since it has the most
+            // harmonics.
+            let table = &self.table[i];
+            for j in 0..2048 {
+                input[j].re = table[j];
+            }
+
+            // Process input
+            fft.process(&mut input, &mut output);
+
+            // Find scale of output
+            let mut max: Float = 0.0;
+            for j in 0..output.len() {
+                max = max.max(output[j].im.abs());
+            }
+            // Transfer output to harmonics list
+            for j in 0..num_harmonics {
+                value = output[j].im;
+                harmonics[i][j] = if value < 0.001 && value > -0.001 {
+                    0.0
+                } else {
+                    (value / max) * -1.0
+                };
+            }
+        }
+        harmonics
     }
 
     // Add a wave with given frequency to a table.
@@ -204,6 +281,57 @@ impl Wavetable {
             insert_wave(&mut table[from..to], current_freq, sample_freq);
             current_freq *= 2.0; // Next octave
         }
+    }
+
+    /// Calculate the start frequency to use for wave creation.
+    pub fn get_start_frequency(base_freq: Float) -> Float {
+        let two: Float = 2.0;
+        (base_freq / 32.0) * (two.powf((-9.0) / 12.0))
+    }
+
+    /// Insert a wave from a list of harmonic amplitudes.
+    ///
+    /// The list of harmonics containes their relative amplitude. After adding
+    /// the harmonics to the wavetable, the total amplitude will be normalized.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    ///
+    /// let harmonics = vec![vec![0.0; 2048]];
+    /// let mut wt = Wavetable::new(1, 11, 2048);
+    /// wt.insert_harmonics(&harmonics, 44100.0);
+    /// ```
+    pub fn insert_harmonics(&mut self, harmonics: &[Vec<Float>], sample_freq: Float) -> Result<(), ()> {
+        if harmonics.len() != self.table.len() {
+            // Number of waveshapes doesn't match
+            info!("Wrong number of tables");
+            return Err(());
+        }
+
+        let mut amp: Float;
+        let num_values = self.num_values;
+
+        for i in 0..harmonics.len() { // For each waveshape
+            let table = &mut self.table[i];
+            let mut start_freq = Wavetable::get_start_frequency(440.0);
+
+            for j in 0..self.num_octaves { // For each octave
+                // Calc number of harmonics for this octave
+                start_freq *= 2.0;
+                let num_harmonics = Wavetable::calc_num_harmonics(start_freq, sample_freq);
+                let num_harmonics = cmp::min(num_harmonics, harmonics[i].len());
+                let from = j * num_values;
+                let to = (j + 1) * num_values;
+
+                // Insert waves
+                for freq in 0..num_harmonics {
+                    amp = harmonics[i][freq];
+                    Wavetable::add_sine_wave(&mut table[from..to], freq as Float, amp);
+                }
+                Wavetable::normalize(&mut table[from..to]);
+            }
+        }
+        Ok(())
     }
 
     /// Combine two tables by subtracting one from the other.

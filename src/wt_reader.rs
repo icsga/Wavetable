@@ -1,4 +1,12 @@
-/* Reads wavetable files */
+//! Reads wavetable files in WAV format.
+//!
+//! Currently WtReader only supports reading WAV files in float format,
+//! containing the samples as 32-bit float values. Additionally each waveform
+//! in the file must be 2048 samples long.
+//!
+//! For every 2048 samples, the reader will add an additional waveshape table
+//! to the result. As read from disk, these tables will not be bandlimited,
+//! and might therefore generate aliasing if used directly.
 
 use super::{Wavetable, WavetableRef};
 use super::Float;
@@ -21,6 +29,17 @@ pub struct WtReader {
 }
 
 impl WtReader {
+    /// Creates a new WtReader instance.
+    ///
+    /// The argument is a path to a directory that files will be read from.
+    ///
+    /// ```
+    /// use wavetable::WtReader;
+    ///
+    /// let data_dir = "data".to_string();
+    ///
+    /// let reader = WtReader::new(&data_dir);
+    /// ```
     pub fn new(path: &str) -> Self {
         let mut base_path = path.to_string();
         let path_bytes = base_path.as_bytes();
@@ -30,6 +49,22 @@ impl WtReader {
         WtReader{base_path: base_path}
     }
 
+    /// Read a file with the given filename.
+    ///
+    /// The filename should not contain the full path of the file, but be
+    /// relative to the base path set in the constructor.
+    ///
+    /// ``` norun
+    /// use wavetable::WtReader;
+    ///
+    /// # fn main() -> Result<(), ()> {
+    ///
+    /// let reader = WtReader::new("data");
+    /// let wavetable = reader.read_file("test")?;
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn read_file(&self, filename: &str) -> Result<WavetableRef, ()> {
         if filename == "" {
             return Err(());
@@ -44,6 +79,20 @@ impl WtReader {
         }
     }
 
+    /// Read a wavetable from the provided input stream.
+    ///
+    /// Source is any stream object implementing the Read trait.
+    /// samples_per_table is the length of a single wave cycle, usually 2048.
+    ///
+    /// ``` norun
+    /// use wavetable::WtReader;
+    /// use std::io::BufReader;
+    ///
+    /// let reader = WtReader::new("data");
+    /// let data: &[u8] = &[0x00]; // Some buffer with wave data
+    /// let buffer = BufReader::new(data);
+    /// let wavetable = WtReader::read_wavetable(buffer, 2048)?;
+    /// ```
     pub fn read_wavetable<R: Read>(mut source: R, samples_per_table: usize) -> Result<WavetableRef, ()> {
         // Read RIFF header
         let result = WtReader::read_header(&mut source);
@@ -75,6 +124,7 @@ impl WtReader {
         }
     }
 
+    // Read the header of the next WAV chunk from the input stream.
     fn read_header<R: Read>(source: &mut R) -> Result<ChunkHeader, ()> {
         let mut header: ChunkHeader = unsafe { mem::zeroed() };
         let header_size = mem::size_of::<ChunkHeader>();
@@ -86,6 +136,7 @@ impl WtReader {
         Ok(header)
     }
 
+    // Skip over the rest of the current chunk to the next header.
     fn skip_chunk<R: Read>(source: &mut R, num_bytes: u32) {
         let mut buf: [u8; 1] = unsafe { mem::zeroed() };
         for _i in 0..num_bytes {
@@ -93,14 +144,12 @@ impl WtReader {
         }
     }
 
-    /** Read samples into multiple tables.
-     *
-     * A file is assumed to hold multiple waveshapes, each with
-     * <samples_per_table> values. One more value is added to the end of the
-     * table automatically.
-     *
-     * Multiple octave tables per waveshape are currently not supported.
-     */
+    // Read samples into multiple tables.
+    //
+    // A file is assumed to hold multiple waveshapes, each with
+    // <samples_per_table> values. One more value is added to the end of the
+    // table automatically.
+    //
     fn read_samples<R: Read>(source: &mut R, num_bytes: u32, samples_per_table: usize) -> Result<Vec<Vec<Float>>, ()> {
         let mut buf: f32 = unsafe { mem::zeroed() };
         let mut samples: Vec<Vec<Float>> = vec!{};
