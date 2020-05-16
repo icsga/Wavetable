@@ -91,6 +91,11 @@ impl WtCreator {
     /// The added waveforms are sine, triangle, saw and square. It will generate
     /// tables with 2048 samples, one octave per table, for 11 octaves.
     ///
+    /// ```
+    /// use wavetable::WtCreator;
+    ///
+    /// let default_waves = WtCreator::create_default_waves(44100.0);
+    /// ```
     pub fn create_default_waves(sample_rate: Float) -> WavetableRef {
         debug!("Initializing default waveshapes");
         let mut wt = Wavetable::new(4, 11, 2048);
@@ -102,7 +107,16 @@ impl WtCreator {
         Arc::new(wt)
     }
 
-    /** Create collection of square waves with different pulse width modulation. */
+    /// Create collection of square waves with different pulse width modulation.
+    ///
+    /// Creating 64 PWM waves is usually a good compromise between resolution
+    /// and memory usage.
+    ///
+    /// ```
+    /// use wavetable::WtCreator;
+    ///
+    /// let pwm_waves = WtCreator::create_pwm_waves(44100.0, 64);
+    /// ```
     pub fn create_pwm_waves(sample_rate: Float, num_pwm_tables: usize) -> WavetableRef {
         info!("Initializing PWM table");
 

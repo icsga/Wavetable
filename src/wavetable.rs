@@ -26,6 +26,18 @@ pub struct Wavetable {
 pub type WavetableRef = Arc<Wavetable>;
 
 impl Wavetable {
+    /// Creates a new Wavetable instance.
+    ///
+    /// This function allocates the memory required for storing the given
+    /// number of tables.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    ///
+    /// // Allocate a table for 4 waveshapes, each containing bandlimited
+    /// // sub-tables for 11 octaves, with each table holding 2048 samples.
+    /// let wt = Wavetable::new(4, 11, 2048);
+    /// ```
     pub fn new(num_tables: usize, num_octaves: usize, num_samples: usize) -> Wavetable {
         let num_values = num_samples + 1;
         let table = vec!(vec!(0.0; num_values * num_octaves); num_tables);
@@ -40,6 +52,18 @@ impl Wavetable {
         }
     }
 
+    /// Create a new Wavetable using the provided sample memory.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    ///
+    /// let num_tables = 4;
+    /// let num_octaves = 11;
+    /// let num_samples = 2048;
+    /// let num_values = num_samples + 1;
+    /// let table = vec!(vec!(0.0; num_values * num_octaves); num_tables);
+    /// let wt = Wavetable::new_from_vector(num_tables, num_octaves, num_samples, table);
+    /// ```
     pub fn new_from_vector(num_tables: usize, num_octaves: usize, num_samples: usize, table: Vec<Vec<Float>>) -> WavetableRef {
         let num_values = num_samples + 1;
         debug!("New Wavetable: {} tables for {} octaves, {} samples",
@@ -53,13 +77,27 @@ impl Wavetable {
         })
     }
 
-    /** Return a table vector for the selected waveshape. */
+    /// Return a table vector for the selected index.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    ///
+    /// let wt = Wavetable::new(4, 11, 2048);
+    /// let first_wave = wt.get_wave(0);
+    /// ```
     pub fn get_wave(&self, wave_id: usize) -> &Vec<Float> {
         &self.table[wave_id]
     }
 
-    /** Return a mutable table vector for the selected waveshape. */
-    fn get_wave_mut(&mut self, wave_id: usize) -> &mut Vec<Float> {
+    /// Return a mutable table vector for the selected waveshape.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    ///
+    /// let wt = Wavetable::new(4, 11, 2048);
+    /// let mut first_wave = wt.get_wave(0);
+    /// ```
+    pub fn get_wave_mut(&mut self, wave_id: usize) -> &mut Vec<Float> {
         &mut self.table[wave_id]
     }
 
@@ -67,11 +105,17 @@ impl Wavetable {
     // Functions for constructing wavetable data
     // -----------------------------------------
 
-    /** Calculates the number of non-aliasing harmonics for one octave.
-     *
-     * Calculates all the harmonics for the octave starting at base_freq that
-     * do not exceed the Nyquist frequency.
-     */
+    /// Calculates the number of non-aliasing harmonics for one octave.
+    ///
+    /// Calculates all the harmonics for the octave starting at base_freq that
+    /// do not exceed the Nyquist frequency.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    ///
+    /// let num_harmonics = Wavetable::calc_num_harmonics(20.0, 100.0);
+    /// assert_eq!(num_harmonics, 1);
+    /// ```
     pub fn calc_num_harmonics(base_freq: Float, sample_freq: Float) -> usize {
         let nyquist_freq = sample_freq / 2.0;
         let num_harmonics = (nyquist_freq / base_freq) as usize - 1; // Don't count the base frequency itself
@@ -80,19 +124,19 @@ impl Wavetable {
         num_harmonics
     }
 
-    /** Add a wave with given frequency to a table.
-     *
-     * Frequency is relative to the buffer length, so a value of 1 will put one
-     * wave period into the table. The values are added to the values already
-     * in the table. Giving a negative amplitude will subtract the values.
-     *
-     * The last sample in the table receives the same value as the first, to
-     * allow more efficient interpolation (eliminates the need for index
-     * wrapping).
-     *
-     * wave_func is a function receiving an input in the range [0:1] and
-     * returning a value in the same range.
-     */
+    // Add a wave with given frequency to a table.
+    //
+    // Frequency is relative to the buffer length, so a value of 1 will put one
+    // wave period into the table. The values are added to the values already
+    // in the table. Giving a negative amplitude will subtract the values.
+    //
+    // The last sample in the table receives the same value as the first, to
+    // allow more efficient interpolation (eliminates the need for index
+    // wrapping).
+    //
+    // wave_func is a function receiving an input in the range [0:1] and
+    // returning a value in the same range.
+    //
     fn add_wave(table: &mut [Float], freq: Float, amplitude: Float, wave_func: fn(Float) -> Float) {
         let extra_sample = table.len() & 0x01;
         let num_samples = table.len() - extra_sample;
@@ -108,22 +152,42 @@ impl Wavetable {
         }
     }
 
-    /** Add a sine wave with given frequency and amplitude to the buffer. */
+    /// Add a sine wave with given frequency and amplitude to the buffer.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    ///
+    /// let mut wt = Wavetable::new(4, 11, 2048);
+    /// let mut first_wave = wt.get_wave_mut(0);
+    /// let frequency = 1.0; // wavelength = buffer size
+    /// let amplitude = 1.0;
+    /// Wavetable::add_sine_wave(&mut first_wave, frequency, amplitude);
+    /// ```
     pub fn add_sine_wave(table: &mut [Float], freq: Float, amplitude: Float) {
         Wavetable::add_wave(table, freq, amplitude, f64::sin);
     }
 
-    /** Add a cosine wave with given frequency and amplitude to the buffer. */
+    /// Add a cosine wave with given frequency and amplitude to the buffer.
+    ///
+    /// ```
+    /// use wavetable::Wavetable;
+    ///
+    /// let mut wt = Wavetable::new(4, 11, 2048);
+    /// let mut first_wave = wt.get_wave_mut(0);
+    /// let frequency = 1.0; // wavelength = buffer size
+    /// let amplitude = 1.0;
+    /// Wavetable::add_cosine_wave(&mut first_wave, frequency, amplitude);
+    /// ```
     pub fn add_cosine_wave(table: &mut [Float], freq: Float, amplitude: Float) {
         Wavetable::add_wave(table, freq, amplitude, f64::cos);
     }
 
-    /** Create octave tables with given insert function.
-     *
-     * Divides the given table into NUM_TABLES subtables and uses the given
-     * insert function to insert waveforms into them. Each table serves the
-     * frequency range of one octave.
-     */
+    /// Create octave tables with given insert function.
+    ///
+    /// Divides the given table into NUM_TABLES subtables and uses the given
+    /// insert function to insert waveforms into them. Each table serves the
+    /// frequency range of one octave.
+    ///
     pub fn insert_tables(&mut self,
                          table_id: usize,
                          start_freq: Float,
@@ -142,13 +206,13 @@ impl Wavetable {
         }
     }
 
-    /** Combine two tables by subtracting one from the other.
-     *
-     * \param table_id ID of the target table to write to
-     * \param table_a Source table that is subtracted from
-     * \param table_b Source table that gets subtracted from table_a
-     * \param offset_b Offset into source table_b (0.0 - 1.0)
-     */
+    /// Combine two tables by subtracting one from the other.
+    ///
+    /// \param table_id ID of the target table to write to
+    /// \param table_a Source table that is subtracted from
+    /// \param table_b Source table that gets subtracted from table_a
+    /// \param offset_b Offset into source table_b (0.0 - 1.0)
+    ///
     pub fn combine_tables(&mut self,
                           table_id: usize,
                           table_a: &[Float],
@@ -175,11 +239,11 @@ impl Wavetable {
         }
     }
 
-    /** Normalizes samples in a table to the range [-1.0,1.0].
-     *
-     * Searches the maximum absolute value and uses it to calculate the
-     * required scale. Assumes that the values are centered around 0.0.
-     */
+    /// Normalizes samples in a table to the range [-1.0,1.0].
+    ///
+    /// Searches the maximum absolute value and uses it to calculate the
+    /// required scale. Assumes that the values are centered around 0.0.
+    ///
     pub fn normalize(table: &mut [Float]) {
         let mut max = 0.0;
         let mut current: Float;
@@ -194,6 +258,7 @@ impl Wavetable {
         }
     }
 
+    /// Shifts all values in a table by the given offset.
     pub fn shift(table: &mut [Float], num_values: usize, offset: usize) {
         let mut temp = vec!(0.0; num_values);
         let mut offset = offset;
@@ -210,7 +275,7 @@ impl Wavetable {
         table[num_values] = table[0];
     }
 
-    /** Return min and max values of given table. */
+    /// Return min and max values of given table.
     fn get_extremes(table: &[Float]) -> (Float, Float) {
         let mut max = -1.0;
         let mut min = 1.0;
@@ -226,11 +291,11 @@ impl Wavetable {
         (min, max)
     }
 
-    /** Expand the samples in a table to the rage [-1.0, 1.0].
-     *
-     * Scales and shifts a wave to fit into the target range. Uses the minimum
-     * and the maximum of the values to calculate scale factor and offset.
-     */
+    /// Expand the samples in a table to the rage [-1.0, 1.0].
+    ///
+    /// Scales and shifts a wave to fit into the target range. Uses the minimum
+    /// and the maximum of the values to calculate scale factor and offset.
+    ///
     pub fn expand(table: &mut [Float]) {
         let (min, max) = Wavetable::get_extremes(table);
         let scale = 2.0 / (max - min);
@@ -242,6 +307,7 @@ impl Wavetable {
         }
     }
 
+    /// Print all values of a table to the logfile.
     pub fn show(&self) {
         for t in &self.table {
             for (i, s) in t.iter().enumerate() {

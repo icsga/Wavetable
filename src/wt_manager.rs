@@ -37,6 +37,8 @@ impl WtManager {
     /// wavetable files.
     ///
     /// ```
+    /// use wavetable::WtManager;
+    ///
     /// let wt_manager = WtManager::new(44100.0, "data");
     /// ```
     pub fn new(sample_rate: Float, data_dir: &str) -> WtManager {
@@ -45,7 +47,7 @@ impl WtManager {
         WtManager{sample_rate, cache, reader}
     }
 
-    /// Add tables with basic waveshapes for given ID.
+    /// Add table containing basic waveshapes with the given ID.
     ///
     /// The wavetable added will contain waves for sine, triangle, saw and
     /// square, 2048 samples per wave, bandlimited with one table per octave,
@@ -53,7 +55,9 @@ impl WtManager {
     /// tuning.
     ///
     /// ```
-    /// let wt_manager = WtManager::new(44100.0, "data");
+    /// use wavetable::WtManager;
+    ///
+    /// let mut wt_manager = WtManager::new(44100.0, "data");
     /// wt_manager.add_basic_tables(0);
     /// ```
     pub fn add_basic_tables(&mut self, id: usize) {
@@ -61,7 +65,7 @@ impl WtManager {
     }
 
 
-    /// Add tables with pulse width modulated square waves for given ID.
+    /// Add table containing pulse width modulated square waves with the given ID.
     ///
     /// The wavetable added will contain the specified number of square waves
     /// with different amounts of pulse width modulation, 2048 samples per
@@ -69,7 +73,9 @@ impl WtManager {
     /// the full range of MIDI notes for standard tuning.
     ///
     /// ```
-    /// let wt_manager = WtManager::new(44100.0, "data");
+    /// use wavetable::WtManager;
+    ///
+    /// let mut wt_manager = WtManager::new(44100.0, "data");
     /// wt_manager.add_pwm_tables(1, 64);
     /// ```
     pub fn add_pwm_tables(&mut self, id: usize, num_pwm_tables: usize) {
@@ -79,7 +85,9 @@ impl WtManager {
     /// Get a single wavetable by id from the cache.
     ///
     /// ```
-    /// let wt_manager = WtManager::new(44100.0, "data");
+    /// use wavetable::WtManager;
+    ///
+    /// let mut wt_manager = WtManager::new(44100.0, "data");
     /// wt_manager.add_basic_tables(0);
     /// let table_ref = wt_manager.get_table(0);
     /// ```
@@ -101,14 +109,20 @@ impl WtManager {
     /// if it failed.
     ///
     /// ```
-    /// let wt_manager = WtManager::new(44100.0, "data");
+    /// use wavetable::{WtManager, WtInfo};
+    ///
+    /// let mut wt_manager = WtManager::new(44100.0, "data");
     /// wt_manager.add_basic_tables(0);
-    /// let wt_info = WtInfo{
-    ///     id: 1,
-    ///     valid: false,
-    ///     name: "TestMe".to_string(),
-    ///     filename: "TestMe.wav".to_string()};
-    /// let fallback = wt_manager.get_table(0);
+    /// let mut wt_info = WtInfo{
+    ///         id: 1,
+    ///         valid: false,
+    ///         name: "TestMe".to_string(),
+    ///         filename: "TestMe.wav".to_string()};
+    /// let fallback = if let Some(table) = wt_manager.get_table(0) {
+    ///     table
+    /// } else {
+    ///     panic!();
+    /// };
     /// wt_manager.load_table(&mut wt_info, fallback);
     /// ```
     pub fn load_table(&mut self, wt_info: &mut WtInfo, fallback: WavetableRef) {
