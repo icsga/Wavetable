@@ -20,8 +20,14 @@ impl WtOsc {
 
     /// Create a new wavetable oscillator.
     ///
-    /// \param sample_rate The global sample rate of the synth
+    /// ```
+    /// use wavetable::WtManager;
+    /// use wavetable::WtOsc;
     ///
+    /// let mut wt_manager = WtManager::new(sample_rate, "test");
+    /// wt_manager.add_basic_tables(0);   // Add the basic waveshapes as ID 0
+    /// let mut osc = WtOsc::new(sample_rate, wt_manager.get_table(0).unwrap());
+    /// ```
     pub fn new(sample_rate: Float, wave: WavetableRef) -> WtOsc {
         let last_update = 0;
         let last_sample = 0.0;
@@ -34,6 +40,20 @@ impl WtOsc {
     }
 
     /// Set the wavetable to use for sound generation.
+    ///
+    /// ```
+    /// use wavetable::WtManager;
+    /// use wavetable::WtOsc;
+    ///
+    /// let mut wt_manager = WtManager::new(sample_rate, "test");
+    /// wt_manager.add_basic_tables(0);   // Add the basic waveshapes as ID 0
+    /// wt_manager.add_pwm_tables(1, 64); // Add PWM waveshapes as ID 1
+    /// // Start with the basic waveshapes
+    /// let mut osc = WtOsc::new(sample_rate, wt_manager.get_table(0).unwrap());
+    ///
+    /// // Later switch to PWM waveshapes
+    /// osc.set_wavetable(wt_manager.get_table(1).unwrap());
+    /// ```
     pub fn set_wavetable(&mut self, wavetable: WavetableRef) {
         self.wave = wavetable;
     }
@@ -86,6 +106,26 @@ impl WtOsc {
     /// this value would be incremented by 1 every time this function is
     /// called.
     ///
+    /// wave_index is a value in the range [0.0, 1.0] and selects the mix of
+    /// the waveshapes. It depends on the number of waveshapes in the wavetable.
+    /// Example: The basic waveshapes include 4 waves (sine, tri, saw, square).
+    /// To get a mix of saw (which has index 2 / 3) and square (which has index
+    /// 3 / 3), we set the index to 5 / 6.
+    ///
+    /// ```
+    /// use wavetable::WtManager;
+    /// use wavetable::WtOsc;
+    ///
+    /// let mut wt_manager = WtManager::new(sample_rate, "test");
+    /// wt_manager.add_basic_tables(0);   // Add the basic waveshapes as ID 0
+    /// let mut osc = WtOsc::new(sample_rate, wt_manager.get_table(0).unwrap());
+    ///
+    /// let frequency = 440.0;      // Frequency of signal to generate
+    /// let sample_clock = 1;       // First sample
+    /// let wave_index = 5.0 / 6.0; // Mix of 50% saw wave and 50% square wave
+    /// let reset = false;          // Don't reset oscillator for this sample
+    /// let sample = osc.get_sample(frequency, sample_clock, wave_index, reset);
+    /// ```
     pub fn get_sample(&mut self, frequency: Float, sample_clock: i64, wave_index: Float, reset: bool) -> Float {
         if reset {
             self.reset(sample_clock - 1);

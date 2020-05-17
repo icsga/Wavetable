@@ -131,7 +131,7 @@ impl Wavetable {
     /// use wavetable::Wavetable;
     ///
     /// let num_harmonics = Wavetable::calc_num_harmonics(20.0, 100.0);
-    /// assert_eq!(num_harmonics, 1);
+    /// assert_eq!(num_harmonics, 1); // Base freq 20 Hz, first harmonic 40 Hz, Nyquist at 50 Hz
     /// ```
     pub fn calc_num_harmonics(base_freq: Float, sample_freq: Float) -> usize {
         let nyquist_freq = sample_freq / 2.0;
@@ -156,7 +156,7 @@ impl Wavetable {
     /// let mut wt_manager = WtManager::new(44100.0, "data");
     /// wt_manager.add_basic_tables(0);
     /// let wt = if let Some(table) = wt_manager.get_table(0) { table } else { panic!(); };
-    /// let harmonics = wt.convert_to_harmonics(1300);
+    /// let harmonics = wt.convert_to_harmonics(1024);
     /// ```
     pub fn convert_to_harmonics(&self, num_harmonics: usize) -> Vec<Vec<Float>> {
         // Allocate memory
@@ -231,6 +231,10 @@ impl Wavetable {
 
     /// Add a sine wave with given frequency and amplitude to the buffer.
     ///
+    /// Frequency is relative to the buffer length, so a value of 1 will put one
+    /// wave period into the table. The values are added to the values already
+    /// in the table. Giving a negative amplitude will subtract the values.
+    ///
     /// ```
     /// use wavetable::Wavetable;
     ///
@@ -245,6 +249,10 @@ impl Wavetable {
     }
 
     /// Add a cosine wave with given frequency and amplitude to the buffer.
+    ///
+    /// Frequency is relative to the buffer length, so a value of 1 will put one
+    /// wave period into the table. The values are added to the values already
+    /// in the table. Giving a negative amplitude will subtract the values.
     ///
     /// ```
     /// use wavetable::Wavetable;
@@ -261,9 +269,15 @@ impl Wavetable {
 
     /// Create octave tables with given insert function.
     ///
-    /// Divides the given table into NUM_TABLES subtables and uses the given
-    /// insert function to insert waveforms into them. Each table serves the
-    /// frequency range of one octave.
+    /// table_id selects the waveshape to insert into. start_freq chooses the
+    /// lowest supported frequency. From that frequency, every octave gets
+    /// inserted into it's own sub-table.
+    ///
+    /// insert_wave is a function that gets called with every octave table as
+    /// argument, and is responsible for entering the actual data into the
+    /// buffer.
+    ///
+    /// Examples for the usage of insert_tables can be found in wt_creator.
     ///
     pub fn insert_tables(&mut self,
                          table_id: usize,
@@ -291,7 +305,7 @@ impl Wavetable {
 
     /// Insert a wave from a list of harmonic amplitudes.
     ///
-    /// The list of harmonics containes their relative amplitude. After adding
+    /// The list of harmonics contains their relative amplitude. After adding
     /// the harmonics to the wavetable, the total amplitude will be normalized.
     ///
     /// ```
@@ -336,10 +350,10 @@ impl Wavetable {
 
     /// Combine two tables by subtracting one from the other.
     ///
-    /// \param table_id ID of the target table to write to
-    /// \param table_a Source table that is subtracted from
-    /// \param table_b Source table that gets subtracted from table_a
-    /// \param offset_b Offset into source table_b (0.0 - 1.0)
+    /// * table_id is the ID of the target table to write to
+    /// * table_a is the source table that is subtracted from
+    /// * table_b is the source table that gets subtracted from table_a
+    /// * offset_b is the offset into source table_b (0.0 - 1.0)
     ///
     pub fn combine_tables(&mut self,
                           table_id: usize,
@@ -386,7 +400,7 @@ impl Wavetable {
         }
     }
 
-    /// Shifts all values in a table by the given offset.
+    /// Shifts the position of all values in a table by the given offset.
     pub fn shift(table: &mut [Float], num_values: usize, offset: usize) {
         let mut temp = vec!(0.0; num_values);
         let mut offset = offset;
@@ -403,7 +417,7 @@ impl Wavetable {
         table[num_values] = table[0];
     }
 
-    /// Return min and max values of given table.
+    // Return min and max values of given table.
     fn get_extremes(table: &[Float]) -> (Float, Float) {
         let mut max = -1.0;
         let mut min = 1.0;

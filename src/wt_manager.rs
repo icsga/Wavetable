@@ -25,7 +25,7 @@ const NUM_PWM_TABLES: usize = 64;
 /// successfully, false otherwise.
 /// The name is a string that can be displayed to the user. It is usually the
 /// filename without the path.
-/// The filename is the full patch to the wave file
+/// The filename is the full path to the wave file.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WtInfo {
     pub id: usize,       // ID of wavetable, used as reference
@@ -124,7 +124,7 @@ impl WtManager {
     /// If the flag bandlimit is set to true, the table will automatically be
     /// converted to a bandlimited version, consisting of 11 tables per wav
     /// shape with reduced number of harmonics, which means the data will
-    /// consume 11 times more memory than the un-bandlimited version.
+    /// consume 11 times more memory than the non-bandlimited version.
     ///
     /// ```
     /// use wavetable::{WtManager, WtInfo};
