@@ -4,8 +4,8 @@ use flexi_logger::{Logger, opt_format};
 
 fn main () {
     Logger::with_env_or_str("myprog=debug, mylib=warn")
-                            .log_to_file()
-                            .directory("log_files")
+                            //.log_to_file()
+                            //.directory("log_files")
                             .format(opt_format)
                             .start()
                             .unwrap();

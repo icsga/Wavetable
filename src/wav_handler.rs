@@ -27,17 +27,17 @@ struct Chunk {
 
 #[repr(C, packed)]
 #[derive(Debug, Default, Copy, Clone)]
-struct FmtChunk {
-    format_tag: u16,      // wFormatTag      2   Format code
-    num_channels: u16,    // nChannels       2   Number of interleaved channels
-    sample_rate: u32,     // nSamplesPerSec  4   Sampling rate (blocks per second)
-    avg_data_rate: u32,   // nAvgBytesPerSec 4   Data rate
-    block_align: u16,     // nBlockAlign     2   Data block size (bytes)
-    bits_per_sample: u16, // wBitsPerSample  2   Bits per sample
-    cb_size: u16,         // cbSize          2   Size of the extension (0 or 22)
-    valid_bits: u16,      // wValidBitsPerSample 2   Number of valid bits
-    channel_mask: u32,    // dwChannelMask   4   Speaker position mask
-    sub_format: [u8; 16]  // SubFormat       16  GUID, including the data format code
+pub struct FmtChunk {
+    pub format_tag: u16,      // wFormatTag      2   Format code
+    pub num_channels: u16,    // nChannels       2   Number of interleaved channels
+    pub sample_rate: u32,     // nSamplesPerSec  4   Sampling rate (blocks per second)
+    pub avg_data_rate: u32,   // nAvgBytesPerSec 4   Data rate
+    pub block_align: u16,     // nBlockAlign     2   Data block size (bytes)
+    pub bits_per_sample: u16, // wBitsPerSample  2   Bits per sample
+    pub cb_size: u16,         // cbSize          2   Size of the extension (0 or 22)
+    pub valid_bits: u16,      // wValidBitsPerSample 2   Number of valid bits
+    pub channel_mask: u32,    // dwChannelMask   4   Speaker position mask
+    pub sub_format: [u8; 16]  // SubFormat       16  GUID, including the data format code
 }
 
 struct DataChunk {
@@ -56,15 +56,15 @@ enum FileData {
     FdData(DataChunk),
 }
 
-pub struct WavFile {
+pub struct WavData {
     info: FmtChunk,
     data: DataChunk,
     chunks: Vec<Chunk>,
 }
 
-impl WavFile {
-    pub fn new() -> WavFile {
-        WavFile{
+impl WavData {
+    pub fn new() -> WavData {
+        WavData{
             info: FmtChunk{..Default::default()},
             data: DataChunk{..Default::default()},
             chunks: vec!{}}
@@ -72,6 +72,10 @@ impl WavFile {
 
     fn add_chunk(&mut self, data: Chunk) {
         self.chunks.push(data);
+    }
+
+    pub fn get_fmt(&self) -> &FmtChunk {
+        &self.info
     }
 
     pub fn get_data_size(&self) -> usize {
@@ -109,14 +113,13 @@ impl WavHandler {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn read_file(filename: &str) -> Result<WavFile, ()> {
+    pub fn read_file(filename: &str) -> Result<WavData, ()> {
         if filename == "" {
             return Err(());
         }
-        debug!("Trying to read file [{}]", filename);
+        info!("Reading wave file [{}]", filename);
         let result = File::open(filename);
         if let Ok(file) = result {
-            trace!("File [{}] opened, reading data", filename);
             let reader = BufReader::new(file);
             WavHandler::read_content(reader)
         } else {
@@ -135,7 +138,6 @@ impl WavHandler {
     ///
     /// # fn main() -> Result<(), ()> {
     ///
-    /// let reader = WavHandler::new();
     /// let data: &[u8] = &[0x00]; // Some buffer with wave data
     /// let buffer = BufReader::new(data);
     /// let wavedata = WavHandler::read_content(buffer)?;
@@ -143,7 +145,7 @@ impl WavHandler {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn read_content<R: Read>(mut source: R) -> Result<WavFile, ()> {
+    pub fn read_content<R: Read>(mut source: R) -> Result<WavData, ()> {
         // Read RIFF header and filetype
         let result = WavHandler::read_riff_container(&mut source, CID_WAVE);
         let size = match result {
@@ -151,8 +153,10 @@ impl WavHandler {
             Err(()) => return Err(()),
         };
 
-        let mut file = WavFile::new();
+        let mut file = WavData::new();
         let mut bytes_read: usize = 4; // Already read the 4 bytes of file type
+        let mut fmt_found = false;
+        let mut data_found = false;
 
         // Read chunks
         loop {
@@ -162,10 +166,12 @@ impl WavHandler {
                     CID_FMT  => {
                         // Get data format
                         file.info = WavHandler::read_chunk(&mut source, header.size as usize)?;
+                        fmt_found = true;
                     }
                     CID_DATA => {
                         // Found data section, create wavetable
                         file.data = WavHandler::read_samples(&mut source, header.size as usize)?;
+                        data_found = true;
                     },
                     _ => WavHandler::skip_chunk(&mut source, header.size),
                 }
@@ -175,9 +181,17 @@ impl WavHandler {
             }
         }
         if bytes_read == size {
-            info!("Finished reading {} bytes", bytes_read);
+            debug!("Finished reading {} bytes", bytes_read);
         } else {
             error!("Invalid file size, read {} bytes, expected {}", bytes_read, size);
+        }
+        if !fmt_found {
+            error!("Invalid file format, format chunk missing");
+            return Err(());
+        }
+        if !data_found {
+            error!("Invalid file, data chunk missing");
+            return Err(());
         }
         Ok(file)
     }
@@ -224,7 +238,7 @@ impl WavHandler {
                 error!("Reading chunk ID failed");
                 return Err(());
             }
-            info!("Read chunk ID: {} - {:x}", WavHandler::get_id_name(header), header);
+            debug!("Read chunk ID: {}", WavHandler::get_id_name(header));
         }
         Ok(header)
     }
@@ -240,7 +254,7 @@ impl WavHandler {
                 // the end of the file. Return Err to signal no header was read.
                 return Err(());
             }
-            info!("Read chunk ID: {} - {:x}, size {}", WavHandler::get_id_name(header.chunk_id), header.chunk_id, header.size);
+            debug!("Reading {} chunk, size {}", WavHandler::get_id_name(header.chunk_id), header.size);
         }
         Ok(header)
     }
@@ -256,7 +270,7 @@ impl WavHandler {
                 error!("Reading chunk data failed");
                 return Err(());
             }
-            info!("Read chunk: {:#?}", data);
+            debug!("Read chunk: {:#?}", data);
         }
         Ok(data)
     }
@@ -265,7 +279,7 @@ impl WavHandler {
     fn read_samples<R: Read>(source: &mut R, num_bytes: usize) -> Result<DataChunk, ()> {
         let mut buff: Vec<u8> = vec![0u8; num_bytes];
         source.read_exact(&mut buff).unwrap();
-        debug!("Read {} bytes of sample data", num_bytes);
+        info!("Read {} bytes of sample data", num_bytes);
         Ok(DataChunk{
             size: num_bytes, 
             data: Box::new(buff)
@@ -308,7 +322,7 @@ impl TestContext {
         }
     }
 
-    pub fn get_data(&mut self, ptr: &[u8]) -> Result<WavFile, ()> {
+    pub fn get_data(&mut self, ptr: &[u8]) -> Result<WavData, ()> {
         let reader = BufReader::new(ptr);
         WavHandler::read_content(reader)
     }
@@ -385,7 +399,7 @@ fn incomplete_wave_id_is_rejected() {
 }
 
 #[test]
-fn valid_riff_empty_wave_is_accepted() {
+fn valid_riff_empty_wave_is_rejected() {
     let mut context = TestContext::new();
 
     let empty_wave: &[u8] = &[
@@ -396,7 +410,7 @@ fn valid_riff_empty_wave_is_accepted() {
         'W' as u8, 'A' as u8, 'V' as u8, 'E' as u8,
     ];
 
-    assert!(context.test(empty_wave));
+    assert!(context.test(empty_wave) == false);
 }
 
 #[test]
@@ -409,6 +423,16 @@ fn single_sample_byte_can_be_read() {
         0x04, 0x00, 0x00, 0x00,
         // WAVE file ID
         'W' as u8, 'A' as u8, 'V' as u8, 'E' as u8,
+        // fmt chunk
+        'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
+        0x12, 0x00, 0x00, 0x00,
+        0x01, 0x00,
+        0x01, 0x00,
+        0x44, 0xAC, 0x00, 0x00, // 44100
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x20, 0x00,
+        0x00, 0x00,
         // data chunk
         'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
         0x01, 0x00, 0x00, 0x00,
@@ -476,6 +500,16 @@ fn unknown_chunks_are_skipped() {
         'n' as u8, 'u' as u8, 'l' as u8, 'l' as u8,
         0x01, 0x00, 0x00, 0x00,
         0xFF,
+        // fmt chunk
+        'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
+        0x12, 0x00, 0x00, 0x00,
+        0x01, 0x00,
+        0x01, 0x00,
+        0x44, 0xAC, 0x00, 0x00, // 44100
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x20, 0x00,
+        0x00, 0x00,
         // data chunk
         'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
         0x02, 0x00, 0x00, 0x00,
