@@ -10,7 +10,7 @@ fn main() {
     // Create the wavetable manager and add the default waveshapes to
     // the cache.
     //
-    let mut wt_manager = WtManager::new(sample_rate, "test");
+    let mut wt_manager = WtManager::new(sample_rate);
     wt_manager.add_basic_tables(basic_wave_id);   // Add the basic waveshapes with ID 0
 
     // Do an FFT of the default waves.

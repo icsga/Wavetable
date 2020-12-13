@@ -9,7 +9,7 @@ fn main() {
 
     // Create the wavetable manager and add the default waveshapes to
     // the cache.
-    let mut wt_manager = WtManager::new(sample_rate, "test");
+    let mut wt_manager = WtManager::new(sample_rate);
     wt_manager.add_basic_tables(0);   // Add the basic waveshapes as ID 0
     wt_manager.add_pwm_tables(1, 64); // Add 64 PWM waveshapes as ID 1
 

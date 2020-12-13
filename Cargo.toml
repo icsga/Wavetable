@@ -8,6 +8,7 @@ repository = "https://github.com/icsga/Wavetable"
 description = "A library for wavetable handling."
 
 [dependencies]
+flexi_logger = "0.14"
 log = "0.4"
 rustfft = "3.0"
 serde = { version = "1.0", features = ["derive"] }

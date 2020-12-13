@@ -153,7 +153,7 @@ impl Wavetable {
     /// use wavetable::Wavetable;
     /// use wavetable::WtManager;
     ///
-    /// let mut wt_manager = WtManager::new(44100.0, "data");
+    /// let mut wt_manager = WtManager::new(44100.0);
     /// wt_manager.add_basic_tables(0);
     /// let wt = if let Some(table) = wt_manager.get_table(0) { table } else { panic!(); };
     /// let harmonics = wt.convert_to_harmonics(1024);

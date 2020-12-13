@@ -43,17 +43,14 @@ pub struct WtManager {
 impl WtManager {
     /// Generate a new WtManager instance.
     ///
-    /// The data_dir is the name of the directory that is used for loading
-    /// wavetable files.
-    ///
     /// ```
     /// use wavetable::WtManager;
     ///
-    /// let wt_manager = WtManager::new(44100.0, "data");
+    /// let wt_manager = WtManager::new(44100.0);
     /// ```
-    pub fn new(sample_rate: Float, data_dir: &str) -> WtManager {
+    pub fn new(sample_rate: Float) -> WtManager {
         let cache = HashMap::new();
-        let reader = WtReader::new(data_dir);
+        let reader = WtReader::new("");
         WtManager{sample_rate, cache, reader}
     }
 
@@ -70,7 +67,7 @@ impl WtManager {
     /// ```
     /// use wavetable::WtManager;
     ///
-    /// let mut wt_manager = WtManager::new(44100.0, "data");
+    /// let mut wt_manager = WtManager::new(44100.0);
     /// wt_manager.add_basic_tables(0);
     /// ```
     pub fn add_basic_tables(&mut self, id: usize) {
@@ -88,7 +85,7 @@ impl WtManager {
     /// ```
     /// use wavetable::WtManager;
     ///
-    /// let mut wt_manager = WtManager::new(44100.0, "data");
+    /// let mut wt_manager = WtManager::new(44100.0);
     /// wt_manager.add_pwm_tables(1, 64);
     /// ```
     pub fn add_pwm_tables(&mut self, id: usize, num_pwm_tables: usize) {
@@ -100,7 +97,7 @@ impl WtManager {
     /// ```
     /// use wavetable::WtManager;
     ///
-    /// let mut wt_manager = WtManager::new(44100.0, "data");
+    /// let mut wt_manager = WtManager::new(44100.0);
     /// wt_manager.add_basic_tables(0);
     /// let table_ref = wt_manager.get_table(0);
     /// ```
@@ -110,6 +107,18 @@ impl WtManager {
         } else {
             None
         }
+    }
+
+    /// Set the path for loading and saving wave files.
+    ///
+    /// ```
+    /// use wavetable::{WtManager, WtInfo};
+    ///
+    /// let mut wt_manager = WtManager::new(44100.0);
+    /// wt_manager.set_path("data");
+    /// ```
+    pub fn set_path(&mut self, path: &str) {
+        self.reader.set_path(path);
     }
 
     /// Loads a wavetable file and adds the table to the cache.
@@ -129,7 +138,7 @@ impl WtManager {
     /// ```
     /// use wavetable::{WtManager, WtInfo};
     ///
-    /// let mut wt_manager = WtManager::new(44100.0, "data");
+    /// let mut wt_manager = WtManager::new(44100.0);
     /// wt_manager.add_basic_tables(0);
     /// let mut wt_info = WtInfo{
     ///         id: 1,
@@ -163,7 +172,7 @@ impl WtManager {
     }
 
     // Adds a wavetable with the given ID to the internal cache.
-    fn add_to_cache(&mut self, id: usize, wt: WavetableRef) {
+    pub fn add_to_cache(&mut self, id: usize, wt: WavetableRef) {
         self.cache.insert(id, wt);
     }
 }

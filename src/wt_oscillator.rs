@@ -25,7 +25,7 @@ impl WtOsc {
     /// use wavetable::WtOsc;
     ///
     /// let sample_rate = 44100.0;
-    /// let mut wt_manager = WtManager::new(sample_rate, "test");
+    /// let mut wt_manager = WtManager::new(sample_rate);
     /// wt_manager.add_basic_tables(0);   // Add the basic waveshapes as ID 0
     /// let mut osc = WtOsc::new(sample_rate, wt_manager.get_table(0).unwrap());
     /// ```
@@ -47,7 +47,7 @@ impl WtOsc {
     /// use wavetable::WtOsc;
     ///
     /// let sample_rate = 44100.0;
-    /// let mut wt_manager = WtManager::new(sample_rate, "test");
+    /// let mut wt_manager = WtManager::new(sample_rate);
     /// wt_manager.add_basic_tables(0);   // Add the basic waveshapes as ID 0
     /// wt_manager.add_pwm_tables(1, 64); // Add PWM waveshapes as ID 1
     /// // Start with the basic waveshapes
@@ -119,7 +119,7 @@ impl WtOsc {
     /// use wavetable::WtOsc;
     ///
     /// let sample_rate = 44100.0;
-    /// let mut wt_manager = WtManager::new(sample_rate, "test");
+    /// let mut wt_manager = WtManager::new(sample_rate);
     /// wt_manager.add_basic_tables(0);   // Add the basic waveshapes as ID 0
     /// let mut osc = WtOsc::new(sample_rate, wt_manager.get_table(0).unwrap());
     ///
