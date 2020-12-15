@@ -11,6 +11,10 @@ const CID_WAVE: u32 = 0x45564157;
 const CID_FMT:  u32 = 0x20746d66;
 const CID_DATA: u32 = 0x61746164;
 
+// Format tag identifiers (don't care about uLaw for now)
+const FMT_PCM: u16 = 1;
+const FMT_FLOAT: u16 = 3;
+
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 struct ChunkHeader {
@@ -18,11 +22,10 @@ struct ChunkHeader {
     size: u32
 }
 
-// Generic chunk
-struct Chunk {
-    chunk_id: u32,
-    size: u32,
-    data: Box<Vec<u8>>,
+impl ChunkHeader {
+    unsafe fn get_size(&self) -> usize {
+        self.size as usize
+    }
 }
 
 #[repr(C, packed)]
@@ -40,22 +43,35 @@ pub struct FmtChunk {
     pub sub_format: [u8; 16]  // SubFormat       16  GUID, including the data format code
 }
 
+// Chunk containing the sample data
 struct DataChunk {
     size: usize,
-    data: Box<Vec<u8>>
+    data: Box<WavDataType>
 }
 
 impl Default for DataChunk {
     fn default() -> Self {
-        DataChunk{size: 0, data: Box::new(vec!())}
+        DataChunk{size: 0, data: Box::new(WavDataType::PCM16(vec!()))}
     }
 }
 
-enum FileData {
-    FdFmt(FmtChunk),
-    FdData(DataChunk),
+// Generic chunk
+struct Chunk {
+    chunk_id: u32,
+    size: u32,
+    data: Box<Vec<u8>>,
 }
 
+/// Container for the different sample data types
+#[derive(Debug)]
+pub enum WavDataType {
+    PCM8(Vec<u8>),
+    PCM16(Vec<i16>),
+    FLOAT32(Vec<f32>),
+    FLOAT64(Vec<f64>)
+}
+
+/// Contains the read wave information and sample data
 pub struct WavData {
     info: FmtChunk,
     data: DataChunk,
@@ -74,16 +90,48 @@ impl WavData {
         self.chunks.push(data);
     }
 
+    /// Get the format chunk containing sample format information
     pub fn get_fmt(&self) -> &FmtChunk {
         &self.info
     }
 
+    /// Get the number of sample bytes
     pub fn get_data_size(&self) -> usize {
         self.data.size
     }
 
-    pub fn get_data(&self) -> &Box<Vec<u8>> {
+    /// Get the vector with sample data
+    pub fn get_data(&self) -> &Box<WavDataType> {
         return &self.data.data;
+    }
+}
+
+// Trait to pack the vector with sample data into a matching enum value
+trait WavDataTypeGetter<T> {
+    fn get_wav_data_type(&self, data: Vec<T>) -> WavDataType;
+}
+
+impl WavDataTypeGetter<u8> for u8 {
+    fn get_wav_data_type(&self, data: Vec<u8>) -> WavDataType {
+        WavDataType::PCM8(data)
+    }
+}
+
+impl WavDataTypeGetter<i16> for i16 {
+    fn get_wav_data_type(&self, data: Vec<i16>) -> WavDataType {
+        WavDataType::PCM16(data)
+    }
+}
+
+impl WavDataTypeGetter<f32> for f32 {
+    fn get_wav_data_type(&self, data: Vec<f32>) -> WavDataType {
+        WavDataType::FLOAT32(data)
+    }
+}
+
+impl WavDataTypeGetter<f64> for f64 {
+    fn get_wav_data_type(&self, data: Vec<f64>) -> WavDataType {
+        WavDataType::FLOAT64(data)
     }
 }
 
@@ -92,7 +140,7 @@ pub struct WavHandler {
 
 /// Handles reading and writing of .wav files.
 ///
-/// Reads wave files into memory as vectors of u8. The resulting struct
+/// Reads wave files into memory as vectors of samples. The resulting struct
 /// contains the FMT info, the data, and a list of additional chunks that
 /// were found in the file (TBD).
 ///
@@ -108,7 +156,7 @@ impl WavHandler {
     ///
     /// # fn main() -> Result<(), ()> {
     ///
-    /// let wavetable = WavHandler::read_file("test")?;
+    /// let wave_data = WavHandler::read_file("test")?;
     ///
     /// # Ok(())
     /// # }
@@ -128,7 +176,7 @@ impl WavHandler {
         }
     }
 
-    /// Read contents of a wave file from the provided input stream.
+    /// Read wave data from the provided input stream.
     ///
     /// Source is any stream object implementing the Read trait.
     ///
@@ -140,7 +188,7 @@ impl WavHandler {
     ///
     /// let data: &[u8] = &[0x00]; // Some buffer with wave data
     /// let buffer = BufReader::new(data);
-    /// let wavedata = WavHandler::read_content(buffer)?;
+    /// let wave_data = WavHandler::read_content(buffer)?;
     ///
     /// # Ok(())
     /// # }
@@ -160,8 +208,9 @@ impl WavHandler {
 
         // Read chunks
         loop {
-            let result = WavHandler::read_header(&mut source);
+            let result: Result<ChunkHeader, ()> = WavHandler::read_object(&mut source);
             if let Ok(header) = result {
+                debug!("Reading {} chunk, size {}", WavHandler::get_id_name(header.chunk_id), unsafe{header.get_size()});
                 match header.chunk_id {
                     CID_FMT  => {
                         // Get data format
@@ -169,8 +218,11 @@ impl WavHandler {
                         fmt_found = true;
                     }
                     CID_DATA => {
-                        // Found data section, create wavetable
-                        file.data = WavHandler::read_samples(&mut source, header.size as usize)?;
+                        // Found data section, read samples
+                        file.data = WavHandler::read_samples(&mut source,
+                                                             header.size as usize,
+                                                             file.info.format_tag,
+                                                             file.info.bits_per_sample)?;
                         data_found = true;
                     },
                     _ => WavHandler::skip_chunk(&mut source, header.size),
@@ -190,7 +242,7 @@ impl WavHandler {
             return Err(());
         }
         if !data_found {
-            error!("Invalid file, data chunk missing");
+            error!("Invalid file format, data chunk missing");
             return Err(());
         }
         Ok(file)
@@ -202,9 +254,10 @@ impl WavHandler {
     // "WAVE"), which is passed as argument.
     fn read_riff_container<R: Read>(source: &mut R, expected_cid: u32) -> Result<usize, ()> {
         // Read RIFF header
-        let result = WavHandler::read_header(source);
+        let result: Result<ChunkHeader, ()> = WavHandler::read_object(source);
         let data_size = match result {
             Ok(header) => {
+                debug!("Reading {} chunk, size {}", WavHandler::get_id_name(header.chunk_id), unsafe{header.get_size()});
                 if header.chunk_id != CID_RIFF {
                     error!("Unexpected chunk ID, expected RIFF, found {}", WavHandler::get_id_name(header.chunk_id));
                     return Err(());
@@ -213,10 +266,11 @@ impl WavHandler {
             }
             Err(()) => return Err(()),
         };
-        let result = WavHandler::read_id(source);
+        let result: Result<u32, ()> = WavHandler::read_object(source);
         match result {
             Ok(header) => {
                 // RIFF header is followed by 4 bytes giving the file type
+                debug!("File type: {}", WavHandler::get_id_name(header));
                 if header != expected_cid {
                     error!("Unexpected file type, expected {}, found {}",
                         WavHandler::get_id_name(expected_cid), WavHandler::get_id_name(header));
@@ -228,40 +282,25 @@ impl WavHandler {
         Ok(data_size)
     }
 
-    // Read chunk ID, without the size information (for file type ID, e.g. "WAVE")
-    fn read_id<R: Read>(source: &mut R) -> Result<u32, ()> {
-        let mut header: u32 = 0;
-        let header_size = 4;
+    fn read_object<R: Read, T>(source: &mut R) -> Result<T, ()> {
+        let mut object: T = unsafe { mem::zeroed() };
+        let object_size = mem::size_of::<T>();
         unsafe {
-            let header_slize = std::slice::from_raw_parts_mut(&mut header as *mut _ as *mut u8, header_size);
-            if let Err(_) = source.read_exact(header_slize) {
-                error!("Reading chunk ID failed");
-                return Err(());
-            }
-            debug!("Read chunk ID: {}", WavHandler::get_id_name(header));
-        }
-        Ok(header)
-    }
-
-    // Read the header of the next chunk from the input stream.
-    fn read_header<R: Read>(source: &mut R) -> Result<ChunkHeader, ()> {
-        let mut header: ChunkHeader = unsafe { mem::zeroed() };
-        let header_size = mem::size_of::<ChunkHeader>();
-        unsafe {
-            let header_slize = std::slice::from_raw_parts_mut(&mut header as *mut _ as *mut u8, header_size);
-            if let Err(_) = source.read_exact(header_slize) {
+            let object_slice = std::slice::from_raw_parts_mut(&mut object as *mut _ as *mut u8, object_size);
+            if let Err(_) = source.read_exact(object_slice) {
                 // If we can't read a full header, we might simply have reached
                 // the end of the file. Return Err to signal no header was read.
                 return Err(());
             }
-            debug!("Reading {} chunk, size {}", WavHandler::get_id_name(header.chunk_id), header.size);
+            trace!("Read object of {} bytes", object_size);
         }
-        Ok(header)
+        Ok(object)
     }
 
     // Read the contents of a chunk from the input stream.
     //
-    // The chunk header is assumed to have been read already.
+    // The chunk header is assumed to have been read already. This is required
+    // for the FMT chunk, since it can have different sizes.
     fn read_chunk<R: Read, T: std::fmt::Debug>(source: &mut R, size: usize) -> Result<T, ()> {
         let mut data: T = unsafe { mem::zeroed() };
         unsafe {
@@ -276,14 +315,45 @@ impl WavHandler {
     }
 
     // Read samples into buffer.
-    fn read_samples<R: Read>(source: &mut R, num_bytes: usize) -> Result<DataChunk, ()> {
-        let mut buff: Vec<u8> = vec![0u8; num_bytes];
-        source.read_exact(&mut buff).unwrap();
-        info!("Read {} bytes of sample data", num_bytes);
-        Ok(DataChunk{
-            size: num_bytes, 
-            data: Box::new(buff)
-        })
+    fn read_samples<R: Read>(source: &mut R, num_bytes: usize, format_tag: u16, bits_per_sample: u16) -> Result<DataChunk, ()> {
+        let samples = match format_tag {
+            FMT_PCM => match bits_per_sample {
+                8  => WavHandler::read_samples_into(source, num_bytes, 0 as u8),
+                16 => WavHandler::read_samples_into(source, num_bytes, 0 as i16),
+                _  => return Err(()),
+            },
+            FMT_FLOAT => match bits_per_sample {
+                32 => WavHandler::read_samples_into(source, num_bytes, 0.0 as f32),
+                64 => WavHandler::read_samples_into(source, num_bytes, 0.0 as f64),
+                _  => return Err(()),
+            },
+            _ => return Err(()),
+        };
+        match samples {
+            Ok(s) => Ok(DataChunk{
+                        size: num_bytes, 
+                        data: Box::new(s)
+                    }),
+            Err(_) => Err(())
+        }
+    }
+
+    // Read bytes from file and convert to matching data type of samples
+    fn read_samples_into<R: Read, T>(source: &mut R, num_bytes: usize, init_val: T) -> Result<WavDataType, ()>
+        where T: Copy + Clone + WavDataTypeGetter<T> {
+        let mut buf: T = unsafe { mem::zeroed() };
+        let sample_size = mem::size_of::<T>();
+        let num_samples = num_bytes / sample_size;
+        info!("{} samples of size {} bytes", num_samples, sample_size);
+        let mut samples: Vec<T> = vec!{init_val; num_samples};
+        unsafe {
+            let sample = std::slice::from_raw_parts_mut(&mut buf as *mut _ as *mut u8, sample_size);
+            for i in 0..num_samples {
+                source.read_exact(sample).unwrap();
+                samples[i] = buf as T;
+            }
+        }
+        Ok(init_val.get_wav_data_type(samples))
     }
 
     // Skip over the rest of the current chunk to the next header.

@@ -15,7 +15,11 @@ fn main () {
     // Open the file (relative to current path)
     let result = WavHandler::read_file(&filename);
     match result {
-        Ok(_wf_ref) => println!("Success"),
+        Ok(wav_file) => {
+            let data = wav_file.get_data();
+            println!("{:?}", data);
+            println!("Success");
+        },
         Err(()) => println!("Failed"),
     }
 }
