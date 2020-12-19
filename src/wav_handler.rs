@@ -340,7 +340,7 @@ impl WavHandler {
 
     // Read bytes from file and convert to matching data type of samples
     fn read_samples_into<R: Read, T>(source: &mut R, num_bytes: usize, init_val: T) -> Result<WavDataType, ()>
-        where T: Copy + Clone + WavDataTypeGetter<T> {
+            where T: Copy + Clone + WavDataTypeGetter<T> {
         let mut buf: T = unsafe { mem::zeroed() };
         let sample_size = mem::size_of::<T>();
         let num_samples = num_bytes / sample_size;
@@ -496,12 +496,12 @@ fn single_sample_byte_can_be_read() {
         // fmt chunk
         'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
         0x12, 0x00, 0x00, 0x00,
-        0x01, 0x00,
-        0x01, 0x00,
-        0x44, 0xAC, 0x00, 0x00, // 44100
+        0x01, 0x00,             // PCM
+        0x01, 0x00,             // 1 channel
+        0x44, 0xAC, 0x00, 0x00, // 44100 Hz
         0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
-        0x20, 0x00,
+        0x08, 0x00,             // 8 bit per sample
         0x00, 0x00,
         // data chunk
         'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
@@ -512,7 +512,11 @@ fn single_sample_byte_can_be_read() {
     let result = context.get_data(single_sample);
     if let Ok(wav_file) = result {
         assert!(wav_file.get_data_size() == 1);
-        assert!(wav_file.get_data()[0] == 0x42);
+        if let WavDataType::PCM8(v) = &**wav_file.get_data() {
+            assert!(v[0] == 0x42);
+        } else {
+            assert!(false);
+        }
     } else {
         assert!(false);
     }
@@ -573,12 +577,12 @@ fn unknown_chunks_are_skipped() {
         // fmt chunk
         'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
         0x12, 0x00, 0x00, 0x00,
-        0x01, 0x00,
-        0x01, 0x00,
-        0x44, 0xAC, 0x00, 0x00, // 44100
+        0x01, 0x00,             // PCM
+        0x01, 0x00,             // 1 channel
+        0x44, 0xAC, 0x00, 0x00, // 44100 Hz
         0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,
-        0x20, 0x00,
+        0x10, 0x00,             // 16 bit per sample
         0x00, 0x00,
         // data chunk
         'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
@@ -594,3 +598,165 @@ fn unknown_chunks_are_skipped() {
     }
 }
 
+#[test]
+fn u8_can_be_read() {
+    let mut context = TestContext::new();
+
+    let single_sample : &[u8] = &[
+        // RIFF header - invalid
+        'R' as u8, 'I' as u8, 'F' as u8, 'F' as u8,
+        0x04, 0x00, 0x00, 0x00,
+        // WAVE file ID
+        'W' as u8, 'A' as u8, 'V' as u8, 'E' as u8,
+        // fmt chunk
+        'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
+        0x12, 0x00, 0x00, 0x00,
+        0x01, 0x00,             // PCM
+        0x01, 0x00,             // 1 channel
+        0x44, 0xAC, 0x00, 0x00, // 44100 Hz
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x08, 0x00,             // 8 bit per sample
+        0x00, 0x00,
+        // data chunk
+        'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
+        0x01, 0x00, 0x00, 0x00,
+        0x42,
+    ];
+
+    let result = context.get_data(single_sample);
+    if let Ok(wav_file) = result {
+        assert!(wav_file.get_data_size() == 1);
+        if let WavDataType::PCM8(data) = &**wav_file.get_data() {
+            assert!(data.len() == 1);
+            assert!(data[0] == 0x42_u8);
+        } else {
+            assert!(false);
+        }
+    } else {
+        assert!(false);
+    }
+}
+
+#[test]
+fn u16_can_be_read() {
+    let mut context = TestContext::new();
+
+    let single_sample : &[u8] = &[
+        // RIFF header - invalid
+        'R' as u8, 'I' as u8, 'F' as u8, 'F' as u8,
+        0x04, 0x00, 0x00, 0x00,
+        // WAVE file ID
+        'W' as u8, 'A' as u8, 'V' as u8, 'E' as u8,
+        // fmt chunk
+        'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
+        0x12, 0x00, 0x00, 0x00,
+        0x01, 0x00,             // PCM
+        0x01, 0x00,             // 1 channel
+        0x44, 0xAC, 0x00, 0x00, // 44100 Hz
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x10, 0x00,             // 16 bit per sample
+        0x00, 0x00,
+        // data chunk
+        'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
+        0x02, 0x00, 0x00, 0x00,
+        0x12, 0x34
+    ];
+
+    let result = context.get_data(single_sample);
+    if let Ok(wav_file) = result {
+        assert!(wav_file.get_data_size() == 2);
+        if let WavDataType::PCM16(data) = &**wav_file.get_data() {
+            assert!(data.len() == 1);
+            assert!(data[0] == 0x3412_i16);
+        } else {
+            assert!(false);
+        }
+    } else {
+        assert!(false);
+    }
+}
+
+#[test]
+fn f32_can_be_read() {
+    let mut context = TestContext::new();
+
+    let single_sample : &[u8] = &[
+        // RIFF header - invalid
+        'R' as u8, 'I' as u8, 'F' as u8, 'F' as u8,
+        0x04, 0x00, 0x00, 0x00,
+        // WAVE file ID
+        'W' as u8, 'A' as u8, 'V' as u8, 'E' as u8,
+        // fmt chunk
+        'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
+        0x12, 0x00, 0x00, 0x00,
+        0x03, 0x00,             // Float
+        0x01, 0x00,             // 1 channel
+        0x44, 0xAC, 0x00, 0x00, // 44100 Hz
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x20, 0x00,             // 32 bit per sample
+        0x00, 0x00,
+        // data chunk
+        'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
+        0x04, 0x00, 0x00, 0x00,
+        0xb6, 0xf3, 0x9d, 0x3f  // = 1.234 in LE format
+    ];
+
+    let result = context.get_data(single_sample);
+    if let Ok(wav_file) = result {
+        assert!(wav_file.get_data_size() == 4);
+        if let WavDataType::FLOAT32(data) = &**wav_file.get_data() {
+            assert!(data.len() == 1);
+            println!("Value: {}", data[0]);
+            assert!(data[0] == 1.234_f32);
+        } else {
+            assert!(false);
+        }
+    } else {
+        assert!(false);
+    }
+}
+
+#[test]
+fn f64_can_be_read() {
+    let mut context = TestContext::new();
+
+    let single_sample : &[u8] = &[
+        // RIFF header - invalid
+        'R' as u8, 'I' as u8, 'F' as u8, 'F' as u8,
+        0x04, 0x00, 0x00, 0x00,
+        // WAVE file ID
+        'W' as u8, 'A' as u8, 'V' as u8, 'E' as u8,
+        // fmt chunk
+        'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
+        0x12, 0x00, 0x00, 0x00,
+        0x03, 0x00,             // Float
+        0x01, 0x00,             // 1 channel
+        0x44, 0xAC, 0x00, 0x00, // 44100 Hz
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00,
+        0x40, 0x00,             // 64 bit per sample
+        0x00, 0x00,
+        // data chunk
+        'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
+        0x08, 0x00, 0x00, 0x00,
+        0x58, 0x39, 0xb4, 0xc8,  // = 1.234 in BE format. Something wrong here.
+        0x76, 0xbe, 0xf3, 0x3f
+    ];
+
+    let result = context.get_data(single_sample);
+    if let Ok(wav_file) = result {
+        assert!(wav_file.get_data_size() == 8);
+        if let WavDataType::FLOAT64(data) = &**wav_file.get_data() {
+            assert!(data.len() == 1);
+            println!("Value: {}", data[0]);
+            assert!(data[0] == 1.234_f64);
+        } else {
+            assert!(false);
+        }
+    } else {
+        assert!(false);
+    }
+}

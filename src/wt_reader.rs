@@ -8,14 +8,17 @@
 //! to the result. As read from disk, these tables will not be bandlimited,
 //! and might therefore generate aliasing if used directly.
 
-use super::{Wavetable, WavetableRef, WavHandler, WavData, FmtChunk};
+use super::{Wavetable, WavetableRef, WavHandler, WavData, WavDataType, FmtChunk};
 use super::Float;
 
+use log::{debug, error, info};
+
+use std::convert::TryInto;
+use num::ToPrimitive;
 use std::fs::File;
 use std::io::{Read, BufReader};
 use std::mem;
-
-use log::{debug, error, info};
+use std::sync::Arc;
 
 pub struct WtReader {
     pub base_path: String,
@@ -95,31 +98,97 @@ impl WtReader {
     // Source is wave struct containing sample data in Vec<u8> format.
     // samples_per_table is the length of a single wave cycle, usually 2048.
     fn create_wavetable(wav_file: &WavData, samples_per_table: usize) -> Result<WavetableRef, ()> {
-        let mut retval = Err(());
-
-        // Get fmt chunk info
-        // We need formatTag, channels and bits per sample
-
-        let fmt: &FmtChunk = wav_file.get_fmt();
-        let format = fmt.format_tag;
-        let num_channels = fmt.num_channels;
-        let bps = fmt.bits_per_sample;
-
-        // Depending on datatype, convert data
-        match format {
-            1 => { // PCM
-            },
-            3 => { // IEEE float
-            },
-            _ => { // All others not supported
-                error!("Unsupported data format [{}]", format);
-                return Err(());
-            },
+        if wav_file.get_fmt().num_channels > 1 {
+            error!("Only single channel files supported");
+            return Err(());
         }
+
+        let retval = match &**wav_file.get_data() {
+            WavDataType::PCM8(data) => WtReader::convert_wav_to_table(&data, 0_u8, 255_u8, samples_per_table, 11),
+            WavDataType::PCM16(data) => WtReader::convert_wav_to_table(&data, -32768_i16, 32767_i16, samples_per_table, 11),
+            WavDataType::FLOAT32(data) => WtReader::convert_wav_to_table(&data, -1.0_f32, 1.0_f32, samples_per_table, 11),
+            WavDataType::FLOAT64(data) => WtReader::convert_wav_to_table(&data, -1.0_f64, 1.0_f64, samples_per_table, 11),
+        };
 
         retval
     }
 
+    fn convert_wav_to_table<T>(data: &Vec<T>, min: T, max: T, samples_per_table: usize, num_octaves: usize) -> Result<WavetableRef, ()>
+            where T: ToPrimitive + Copy + Clone {
+        // Determine wavetable properties
+        let num_samples = data.len();
+        let mut source_inc: f64 = 1.0;
+        let num_tables =
+            if num_samples < samples_per_table {
+                // Single table, interpolate source samples to match table size
+                source_inc = num_samples as f64 / samples_per_table as f64;
+                1
+            } else if num_samples % samples_per_table != 0 {
+                // Source isn't multiple of table size, can't handle this case
+                info!("Unexpected number of samples: {}, not multiple of {}", num_samples, samples_per_table);
+                return Err(());
+            } else {
+                num_samples / samples_per_table
+            };
+        info!("{} samples total, {} tables with {} values each", num_samples, num_tables, samples_per_table);
+        println!("{} samples total, {} tables with {} values each, inc = {}", num_samples, num_tables, samples_per_table, source_inc);
+
+        // Calculate required scaling
+        let min_f: f64 = match min.to_f64() {
+            Some(v) => v,
+            None => return Err(()),
+        };
+        let max_f: f64 = match max.to_f64() {
+            Some(v) => v,
+            None => return Err(()),
+        };
+        let scale = 2.0 / (max_f - min_f);
+        let offset = min_f * scale + 1.0;
+
+        // Convert values
+        let mut index_f: f64;
+        let mut lower_index: usize;
+        let mut upper_index: usize;
+        let mut wt = Wavetable::new(num_tables, num_octaves, num_samples);
+        let mut ip_val: f64;
+        let mut fract: f64;
+        for i in 0..num_tables {
+            let table = &mut wt.table[i];
+            for j in 0..samples_per_table {
+                index_f = j as f64 * source_inc;
+                lower_index = index_f as usize;
+                upper_index = if lower_index == num_samples - 1 { lower_index } else { lower_index + 1 };
+                fract = index_f - ((index_f as usize) as f64);
+                match WtReader::interpolate(data[lower_index], data[upper_index], fract) {
+                    Some(v) => {
+                        ip_val = (v * scale) - offset;
+                        table[j] = ip_val as Float;
+                        println!("scale = {}, offset = {}, value = {}, ip_val = {}", scale, offset, v, ip_val);
+                    }
+                    None => {
+                        error!("Failed to convert source samples to target type");
+                        return Err(());
+                    }
+                }
+            }
+            table[samples_per_table] = table[0]; // Duplicate first entry as last entry for easy interpolation
+            Wavetable::normalize(table);
+        }
+        Ok(Arc::new(wt))
+    }
+
+    fn interpolate<S: ToPrimitive + Copy + Clone>(source_lower: S, source_upper: S, fract: f64) -> Option<f64> {
+        let lower_f: f64 = match source_lower.to_f64() {
+            Some(v) => v,
+            None => return None,
+        };
+        let upper_f: f64 = match source_upper.to_f64() {
+            Some(v) => v,
+            None => return None,
+        };
+        println!("lower_f = {}, upper_f = {}, fract = {}", lower_f, upper_f, fract);
+        Some((lower_f + ((upper_f - lower_f) * fract)) as Float)
+    }
 }
 
 
@@ -127,6 +196,36 @@ impl WtReader {
 //                  Unit tests
 // ----------------------------------------------
 
+#[test]
+fn base_path_is_set_up_correctly() {
+    let wtr = WtReader::new("NoSlash");
+    assert!(wtr.base_path == "NoSlash/".to_string());
+
+    let wtr = WtReader::new("WithSlash/");
+    assert!(wtr.base_path == "WithSlash/".to_string());
+}
+
+#[test]
+fn u8_can_be_converted() {
+    let data = vec![0_u8, 255_u8];
+    let wt = WtReader::convert_wav_to_table(&data, 0_u8, 255_u8, 2, 1).unwrap();
+    println!("wt = {:?}", wt);
+    assert!(wt.num_tables == 1);
+    assert!(wt.num_samples == 2);
+    assert!(wt.table == vec![vec![-1.0, 1.0, -1.0]]);
+}
+
+#[test]
+fn i16_can_be_converted() {
+    let data = vec![-32768_i16, 0, 32767_i16];
+    let wt = WtReader::convert_wav_to_table(&data, -32768_i16, 32767_i16, 2, 1).unwrap();
+    println!("wt = {:?}", wt);
+    assert!(wt.num_tables == 1);
+    assert!(wt.num_samples == 3);
+    assert!(wt.table == vec![vec![-1.0, 0.0, 1.0, -1.0]]);
+}
+
+/*
 struct TestContext {
     wt_reader: WtReader,
 }
@@ -146,7 +245,6 @@ impl TestContext {
     }
 }
 
-/*
 #[test]
 fn single_wave_can_be_read() {
     let mut context = TestContext::new();
@@ -157,15 +255,6 @@ fn single_wave_can_be_read() {
 fn partial_wave_is_rejected() {
     let mut context = TestContext::new();
     assert!(!context.test(PARTIAL_WAVE));
-}
-
-#[test]
-fn base_path_is_set_up_correctly() {
-    let wtr = WtReader::new("NoSlash");
-    assert!(wtr.base_path == "NoSlash/".to_string());
-
-    let wtr = WtReader::new("WithSlash/");
-    assert!(wtr.base_path == "WithSlash/".to_string());
 }
 
 const PARTIAL_WAVE: &[u8] = &[

@@ -26,6 +26,7 @@ use rustfft::num_traits::Zero;
 use std::cmp;
 use std::sync::Arc;
 
+#[derive(Debug)]
 pub struct Wavetable {
     pub num_tables: usize,  // Number of different waveshapes
     pub num_octaves: usize, // Number of octave tables to generate per waveshape
