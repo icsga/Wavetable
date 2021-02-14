@@ -153,11 +153,11 @@ impl WtManager {
     /// wt_manager.load_table(&mut wt_info, fallback, false);
     /// ```
     pub fn load_table(&mut self, wt_info: &mut WtInfo, fallback: WavetableRef, bandlimit: bool) {
-        let result = self.reader.read_file(&wt_info.filename);
+        let result = self.reader.read_file(&wt_info.filename, None);
         let table = if let Ok(wt) = result {
             wt_info.valid = true;
             if bandlimit {
-                let harmonics = wt.convert_to_harmonics(1024);
+                let harmonics = wt.convert_to_harmonics();
                 let mut wt_bandlimited = Wavetable::new(wt.table.len(), 11, 2048);
                 wt_bandlimited.insert_harmonics(&harmonics, self.sample_rate).unwrap();
                 Arc::new(wt_bandlimited)

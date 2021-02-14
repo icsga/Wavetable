@@ -7,10 +7,13 @@ license = "MIT"
 repository = "https://github.com/icsga/Wavetable"
 description = "A library for wavetable handling."
 
+[features]
+use_double_precision = []
+
 [dependencies]
 flexi_logger = "0.14"
 log = "0.4"
-num = "*"
+num = "0.3"
 rustfft = "3.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

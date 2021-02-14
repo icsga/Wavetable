@@ -17,5 +17,9 @@ pub use wt_manager::{WtManager, WtInfo};
 pub use wt_oscillator:: WtOsc;
 pub use wt_reader::WtReader;
 
+#[cfg(not(feature = "use_double_precision"))]
+pub type Float = f32;
+
+#[cfg(feature = "use_double_precision")]
 pub type Float = f64;
 

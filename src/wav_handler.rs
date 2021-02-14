@@ -28,6 +28,7 @@ impl ChunkHeader {
     }
 }
 
+/// Represents the format chunk that needs to be present in every WAV file.
 #[repr(C, packed)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct FmtChunk {
@@ -41,6 +42,33 @@ pub struct FmtChunk {
     pub valid_bits: u16,      // wValidBitsPerSample 2   Number of valid bits
     pub channel_mask: u32,    // dwChannelMask   4   Speaker position mask
     pub sub_format: [u8; 16]  // SubFormat       16  GUID, including the data format code
+}
+
+impl FmtChunk {
+    pub fn new(data: &WavDataType) -> FmtChunk {
+        FmtChunk{
+            format_tag: data.get_format_tag(),
+            num_channels: 1,
+            sample_rate: 0,
+            avg_data_rate: 0,
+            block_align: 0,
+            bits_per_sample: data.get_bits_per_sample(),
+            cb_size: 0,
+            valid_bits: data.get_bits_per_sample(),
+            channel_mask: 0,
+            sub_format: [0u8; 16],
+        }
+    }
+
+    /// Get the number of audio channels defined in the WAV file.
+    pub fn get_num_channels(&self) -> usize {
+        self.num_channels as usize
+    }
+
+    /// Get the number of bits per sample defined in the WAV file.
+    pub fn get_bits_per_sample(&self) -> usize {
+        self.bits_per_sample as usize
+    }
 }
 
 // Chunk containing the sample data
@@ -62,7 +90,7 @@ struct Chunk {
     data: Box<Vec<u8>>,
 }
 
-/// Container for the different sample data types
+/// Container for the different sample data types.
 #[derive(Debug)]
 pub enum WavDataType {
     PCM8(Vec<u8>),
@@ -71,7 +99,51 @@ pub enum WavDataType {
     FLOAT64(Vec<f64>)
 }
 
-/// Contains the read wave information and sample data
+impl WavDataType {
+    /// Get the number of samples in the container.
+    pub fn get_num_samples(&self) -> usize {
+        match self {
+            WavDataType::PCM8(v) => v.len(),
+            WavDataType::PCM16(v) => v.len(),
+            WavDataType::FLOAT32(v) => v.len(),
+            WavDataType::FLOAT64(v) => v.len(),
+        }
+    }
+
+    /// Get a printable representation of the data type.
+    pub fn get_type(&self) -> &str {
+        match self {
+            WavDataType::PCM8(_) => "PCM8",
+            WavDataType::PCM16(_) => "PCM16",
+            WavDataType::FLOAT32(_) => "Float32",
+            WavDataType::FLOAT64(_) => "Float64",
+        }
+    }
+
+    /// Get the format tag of the FMT chunk that represents the current
+    /// data type.
+    pub fn get_format_tag(&self) -> u16 {
+        match self {
+            WavDataType::PCM8(_) => FMT_PCM,
+            WavDataType::PCM16(_) => FMT_PCM,
+            WavDataType::FLOAT32(_) => FMT_FLOAT,
+            WavDataType::FLOAT64(_) => FMT_FLOAT,
+        }
+    }
+
+    /// Get the format tag of the FMT chunk that represents the current
+    /// data type.
+    pub fn get_bits_per_sample(&self) -> u16 {
+        match self {
+            WavDataType::PCM8(_) => 8,
+            WavDataType::PCM16(_) => 16,
+            WavDataType::FLOAT32(_) => 32,
+            WavDataType::FLOAT64(_) => 64,
+        }
+    }
+}
+
+/// Contains the format information and sample data read from the file.
 pub struct WavData {
     info: FmtChunk,
     data: DataChunk,
@@ -86,21 +158,30 @@ impl WavData {
             chunks: vec!{}}
     }
 
+    pub fn new_from_vector(samples: Box<WavDataType>) -> WavData {
+        let info = FmtChunk::new(&samples);
+        let data = DataChunk{size: samples.get_num_samples(), data: samples};
+        let chunks = vec!{};
+        WavData{
+            info,
+            data,
+            chunks}
+    }
+
     fn add_chunk(&mut self, data: Chunk) {
         self.chunks.push(data);
     }
 
-    /// Get the format chunk containing sample format information
     pub fn get_fmt(&self) -> &FmtChunk {
         &self.info
     }
 
-    /// Get the number of sample bytes
+    /// Get the number of sample bytes.
     pub fn get_data_size(&self) -> usize {
         self.data.size
     }
 
-    /// Get the vector with sample data
+    /// Get the vector with sample data.
     pub fn get_data(&self) -> &Box<WavDataType> {
         return &self.data.data;
     }
@@ -135,8 +216,7 @@ impl WavDataTypeGetter<f64> for f64 {
     }
 }
 
-pub struct WavHandler {
-}
+pub struct WavHandler;
 
 /// Handles reading and writing of .wav files.
 ///
