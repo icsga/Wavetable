@@ -176,6 +176,10 @@ impl WavData {
         &self.info
     }
 
+    pub fn get_fmt_mut(&mut self) -> &mut FmtChunk {
+        &mut self.info
+    }
+
     /// Get the number of sample bytes.
     pub fn get_data_size(&self) -> usize {
         self.data.size

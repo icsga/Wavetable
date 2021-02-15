@@ -136,38 +136,27 @@ impl WtReader {
         let num_tables =
             if num_samples < samples_per_table {
                 // Single table, interpolate source samples to match table size
-                source_inc = num_samples as Float / samples_per_table as Float;
+                source_inc = (num_samples - 1) as Float / (samples_per_table - 1) as Float;
                 1
             } else if num_samples % samples_per_table != 0 {
                 // Source isn't multiple of table size, can't handle this case
                 info!("Unexpected number of samples: {}, not multiple of {}", num_samples, samples_per_table);
                 return Err(());
             } else {
+                // One or more tables with exact number of samples
                 num_samples / samples_per_table
             };
         info!("{} samples total, {} tables with {} values each", num_samples, num_tables, samples_per_table);
 
         // Calculate required scaling
         #[cfg(feature = "use_double_precision")]
-            let min_f: Float = match min.to_f64() {
-                Some(v) => v,
-                None => return Err(()),
-            };
+            let min_f: Float = min.to_f64().unwrap();
         #[cfg(feature = "use_double_precision")]
-            let max_f: Float = match max.to_f64() {
-                Some(v) => v,
-                None => return Err(()),
-            };
+            let max_f: Float = max.to_f64().unwrap();
         #[cfg(not(feature = "use_double_precision"))]
-            let min_f: Float = match min.to_f32() {
-                Some(v) => v,
-                None => return Err(()),
-            };
+            let min_f: Float = min.to_f32().unwrap();
         #[cfg(not(feature = "use_double_precision"))]
-            let max_f: Float = match max.to_f32() {
-                Some(v) => v,
-                None => return Err(()),
-            };
+            let max_f: Float = max.to_f32().unwrap();
 
         let scale = 2.0 / (max_f - min_f);
         let offset = min_f * scale + 1.0;
@@ -205,25 +194,14 @@ impl WtReader {
 
     fn interpolate<S: ToPrimitive + Copy + Clone>(source_lower: S, source_upper: S, fract: Float) -> Option<Float> {
         #[cfg(feature = "use_double_precision")]
-        let lower_f: Float = match source_lower.to_f64() {
-            Some(v) => v,
-            None => return None,
-        };
+            let lower_f: Float = source_lower.to_f64().unwrap();
         #[cfg(feature = "use_double_precision")]
-        let upper_f: Float = match source_upper.to_f64() {
-            Some(v) => v,
-            None => return None,
-        };
+            let upper_f: Float = source_upper.to_f64().unwrap();
         #[cfg(not(feature = "use_double_precision"))]
-        let lower_f: Float = match source_lower.to_f32() {
-            Some(v) => v,
-            None => return None,
-        };
+            let lower_f: Float = source_lower.to_f32().unwrap();
         #[cfg(not(feature = "use_double_precision"))]
-        let upper_f: Float = match source_upper.to_f32() {
-            Some(v) => v,
-            None => return None,
-        };
+            let upper_f: Float = source_upper.to_f32().unwrap();
+
         Some((lower_f + ((upper_f - lower_f) * fract)) as Float)
     }
 
@@ -265,6 +243,7 @@ fn values_match(actual: &Vec<Float>, expected: &Vec<Float>, delta: Float) -> boo
     if actual.len() != expected.len() {
         return false;
     }
+    //println!("Actual: {:?}\nExpected: {:?}", actual, expected);
     for i in 0..actual.len() {
         let diff = actual[i] - expected[i];
         if diff > delta || diff < -delta {
@@ -287,42 +266,53 @@ fn base_path_is_set_up_correctly() {
 #[test]
 fn u8_can_be_converted() {
     let data = vec![0_u8, 255_u8];
-    let wt = WtReader::convert_wav_to_table(&data, 0_u8, 255_u8, 2).unwrap();
+    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
+    assert!(wt.num_octaves == 1);
     assert!(wt.num_samples == 2);
+    assert!(wt.num_values == 3);
     assert!(wt.table == vec![vec![-1.0, 1.0, -1.0]]);
 }
 
 #[test]
 fn i16_can_be_converted() {
     let data = vec![-32768_i16, 32767_i16];
-    let wt = WtReader::convert_wav_to_table(&data, -32768_i16, 32767_i16, 2).unwrap();
+    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM16(data)));
+    let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
+    assert!(wt.num_octaves == 1);
     assert!(wt.num_samples == 2);
+    assert!(wt.num_values == 3);
     assert!(wt.table == vec![vec![-1.0, 1.0, -1.0]]);
 }
 
 #[test]
 fn f32_can_be_converted() {
     let data = vec![-1.0_f32, -0.1234_f32, 0.0_f32, 0.1234_f32, 1.0_f32];
-    let wt = WtReader::convert_wav_to_table(&data, -1.0_f32, 1.0_f32, 5).unwrap();
+    let wav_data = WavData::new_from_vector(Box::new(WavDataType::FLOAT32(data)));
+    let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
+    assert!(wt.num_octaves == 1);
     assert!(wt.num_samples == 5);
+    assert!(wt.num_values == 6);
     assert!(values_match(&wt.table[0], &vec![-1.0, -0.1234, 0.0, 0.1234, 1.0, -1.0], 0.000001));
 }
 
 #[test]
 fn f64_can_be_converted() {
     let data = vec![-1.0_f64, -0.1234_f64, 0.0_f64, 0.1234_f64, 1.0_f64];
-    let wt = WtReader::convert_wav_to_table(&data, -1.0_f64, 1.0_f64, 5).unwrap();
+    let wav_data = WavData::new_from_vector(Box::new(WavDataType::FLOAT64(data)));
+    let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
+    assert!(wt.num_octaves == 1);
     assert!(wt.num_samples == 5);
+    assert!(wt.num_values == 6);
     assert!(values_match(&wt.table[0], &vec![-1.0, -0.1234, 0.0, 0.1234, 1.0, -1.0], 0.000001));
 }
 
 #[test]
-fn table_can_be_created_from_u8() {
-    // Set up wave file data for u8
+fn u8_is_interpolated_correctly() {
     let data = vec![0_u8, 64_u8, 128_u8, 192_u8, 255_u8];
     let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
     let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
@@ -331,5 +321,46 @@ fn table_can_be_created_from_u8() {
     assert!(wt.num_samples == 5);
     assert!(wt.num_values == 6);
     assert!(values_match(&wt.table[0], &vec![-1.0, -0.5, 0.0, 0.5, 1.0, -1.0], 0.01));
-    print!("Data: {:?}", wt.table[0]);
+}
+
+#[test]
+fn wrong_number_of_channels_is_rejected() {
+    let data = vec![0_u8, 64_u8, 128_u8, 192_u8, 255_u8];
+    let mut wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    wav_data.get_fmt_mut().num_channels = 2;
+    let result = WtReader::create_wavetable(&wav_data, None);
+    assert!(if let Err(_) = result { true } else { false });
+}
+
+#[test]
+fn wrong_number_of_samples_is_rejected() {
+    let data = vec![0_u8, 64_u8, 128_u8, 192_u8, 255_u8];
+    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    let result = WtReader::create_wavetable(&wav_data, Some(4));
+    assert!(if let Err(_) = result { true } else { false });
+}
+
+#[test]
+fn multiple_tables_can_be_read() {
+    let data = vec![0_u8, 64_u8, 128_u8, 192_u8, 255_u8, 0_u8, 64_u8, 128_u8, 192_u8, 255_u8];
+    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    let wt = WtReader::create_wavetable(&wav_data, Some(5)).unwrap();
+    assert!(wt.num_tables == 2);
+    assert!(wt.num_octaves == 1);
+    assert!(wt.num_samples == 5);
+    assert!(wt.num_values == 6);
+    assert!(values_match(&wt.table[0], &vec![-1.0, -0.5, 0.0, 0.5, 1.0, -1.0], 0.01));
+    assert!(values_match(&wt.table[1], &vec![-1.0, -0.5, 0.0, 0.5, 1.0, -1.0], 0.01));
+}
+
+#[test]
+fn samples_are_interpolated_correctly() {
+    let data = vec![-1.0_f32, 1.0_f32];
+    let wav_data = WavData::new_from_vector(Box::new(WavDataType::FLOAT32(data)));
+    let wt = WtReader::create_wavetable(&wav_data, Some(5)).unwrap();
+    assert!(wt.num_tables == 1);
+    assert!(wt.num_octaves == 1);
+    assert!(wt.num_samples == 5);
+    assert!(wt.num_values == 6);
+    assert!(values_match(&wt.table[0], &vec![-1.0, -0.5, 0.0, 0.5, 1.0, -1.0], 0.000001));
 }
