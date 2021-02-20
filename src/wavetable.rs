@@ -19,7 +19,7 @@
 use super::Float;
 
 use log::{info, debug, trace, warn};
-use rustfft::FFTplanner;
+use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 
@@ -196,33 +196,32 @@ impl Wavetable {
         let mut harmonics = vec![vec![0.0; num_harmonics]; self.table.len()];
 
         // Prepare FFT
-        let mut input: Vec<Complex<Float>> = vec![Complex::zero(); num_samples];
-        let mut output: Vec<Complex<Float>> = vec![Complex::zero(); num_samples];
-        let mut planner = FFTplanner::new(false);
-        let fft = planner.plan_fft(num_samples);
+        let mut buffer: Vec<Complex<Float>> = vec![Complex::zero(); num_samples];
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(num_samples);
         let mut value: Float;
 
         // For all waveshapes in the Wavetable
         for (i, ref table) in self.table.iter().enumerate() {
 
-            // Copy wave to input.
+            // Copy wave to buffer.
             // We're only checking octave table 1, since it has the most
             // harmonics.
             for (j, sample) in table.iter().enumerate() {
-                input[j].re = *sample;
+                buffer[j].re = *sample;
             }
 
-            // Process input
-            fft.process(&mut input, &mut output);
+            // Process buffer
+            fft.process(&mut buffer);
 
             // Find scale of output
             let mut max: Float = 0.0;
-            for sample in output.iter() {
+            for sample in buffer.iter() {
                 max = max.max(sample.im.abs());
             }
             // Transfer output to harmonics list
             for j in 0..num_harmonics {
-                value = output[j].im;
+                value = buffer[j].im;
                 harmonics[i][j] = if value < 0.001 && value > -0.001 {
                     0.0
                 } else {
@@ -345,7 +344,7 @@ impl Wavetable {
         }
     }
 
-    pub fn do_insert(table: &mut[Float], harmonics: &[Float], sample_freq: Float, num_octaves: usize, num_values: usize, id: usize) {
+    pub fn do_insert(table: &mut[Float], harmonics: &[Float], sample_freq: Float, num_octaves: usize, num_values: usize, _id: usize) {
         //println!("{}: Creating table", id);
         // Calculate start freq for highest octave
         let lowest_freq = Wavetable::get_start_frequency(440.0);
