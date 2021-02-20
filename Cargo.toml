@@ -12,6 +12,7 @@ use_double_precision = []
 
 [dependencies]
 crossbeam = "0.8"
+scoped_threadpool = "0.1.9"
 flexi_logger = "0.14"
 log = "0.4"
 num = "0.3"

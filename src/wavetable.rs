@@ -24,6 +24,7 @@ use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 
 use crossbeam;
+use scoped_threadpool::Pool;
 
 use std::cmp;
 use std::fmt;
@@ -345,7 +346,7 @@ impl Wavetable {
     }
 
     pub fn do_insert(table: &mut[Float], harmonics: &[Float], sample_freq: Float, num_octaves: usize, num_values: usize, id: usize) {
-        println!("{}: Creating table", id);
+        //println!("{}: Creating table", id);
         // Calculate start freq for highest octave
         let lowest_freq = Wavetable::get_start_frequency(440.0);
         let mut start_freq = lowest_freq * (2 << num_octaves - 2) as Float;
@@ -359,8 +360,8 @@ impl Wavetable {
         let mut from = current_octave * num_values;
         let mut to = (current_octave + 1) * num_values;
         let mut offset = 0;
-        println!("{}: Octave {}: start_freq = {}, highest_freq = {}, inserting {} harmonics, offset {}",
-            id, current_octave, start_freq, start_freq * 2.0, num_harmonics, offset);
+        //println!("{}: Octave {}: start_freq = {}, highest_freq = {}, inserting {} harmonics, offset {}",
+            //id, current_octave, start_freq, start_freq * 2.0, num_harmonics, offset);
         Wavetable::put_harmonics(&mut table[from..to], harmonics, num_harmonics, offset);
 
         // For all lower octaves:
@@ -377,8 +378,8 @@ impl Wavetable {
             start_freq /= 2.0;
             num_harmonics = Wavetable::calc_num_harmonics(start_freq, sample_freq);
             num_harmonics = cmp::min(num_harmonics, harmonics.len());
-            println!("{}: Octave {}: start_freq = {}, highest_freq = {}, inserting {} harmonics, offset {}",
-                id, current_octave, start_freq, start_freq * 2.0, num_harmonics, offset);
+            //println!("{}: Octave {}: start_freq = {}, highest_freq = {}, inserting {} harmonics, offset {}",
+                //id, current_octave, start_freq, start_freq * 2.0, num_harmonics, offset);
             // - Insert harmonic difference to previous table
             Wavetable::put_harmonics(&mut table[from..to], &harmonics, num_harmonics, offset);
         }
@@ -386,7 +387,7 @@ impl Wavetable {
         for i in 0..num_octaves {
             Wavetable::normalize(&mut table[i * num_values..(i + 1) * num_values]);
         }
-        println!("{}: Finished with table", id);
+        //println!("{}: Finished with table", id);
     }
 
     /// Insert a wave from a list of harmonic amplitudes.
@@ -408,16 +409,29 @@ impl Wavetable {
         let num_values = self.num_values;
         let num_octaves = self.num_octaves;
 
-        let it = self.table.chunks_mut(1);
+        let mut pool = Pool::new(16);
+        pool.scoped(|scope| {
+            let mut i = 0;
+            for table in self.table.chunks_mut(1) { // For each waveshape
+                scope.execute(move || {
+                    Wavetable::do_insert(&mut table[0], &harmonics[i], sample_freq, num_octaves, num_values, i);
+                });
+                i += 1;
+            }
+        });
+
+        /*
         let _ = crossbeam::scope(|s| {
             let mut i = 0;
-            for table in it { // For each waveshape
+            for table in self.table.chunks_mut(1) { // For each waveshape
                 s.spawn(move |_| {
                     Wavetable::do_insert(&mut table[0], &harmonics[i], sample_freq, num_octaves, num_values, i);
                 });
                 i += 1;
             }
         });
+        */
+
         Ok(())
     }
 
