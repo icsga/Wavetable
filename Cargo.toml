@@ -11,6 +11,7 @@ description = "A library for wavetable handling."
 use_double_precision = []
 
 [dependencies]
+crossbeam = "0.8"
 flexi_logger = "0.14"
 log = "0.4"
 num = "0.3"
