@@ -36,6 +36,7 @@ pub struct WtInfo {
 
 pub struct WtManager {
     sample_rate: Float,
+    num_octaves: usize,
     cache: HashMap<usize, WavetableRef>,
     reader: WtReader,
 }
@@ -43,6 +44,9 @@ pub struct WtManager {
 impl WtManager {
     /// Generate a new WtManager instance.
     ///
+    /// sample_rate is required to correctly calculate the number of harmonics
+    /// to generate for bandlimited octave tables, to avoid aliasing.
+    ///  
     /// ```
     /// use wavetable::WtManager;
     ///
@@ -51,15 +55,34 @@ impl WtManager {
     pub fn new(sample_rate: Float) -> WtManager {
         let cache = HashMap::new();
         let reader = WtReader::new("");
-        WtManager{sample_rate, cache, reader}
+        WtManager{sample_rate, num_octaves: 11, cache, reader}
+    }
+
+    /// Set the number of bandlimited tables to create.
+    ///
+    /// num_octaves determines how many of the bandlimited tables to generate.
+    /// The default is 11, covering the full range of MIDI notes for standard
+    /// tuning. Setting it to a lower value can save some memory.
+    ///
+    /// Setting it to a higher value higher than 11 will usually not have much
+    /// benefit, since the base frequency of an octave higher than 11 will be
+    /// above the Nyquist frequency, so the table will be effectively empty.
+    ///
+    /// ```
+    /// use wavetable::WtManager;
+    ///
+    /// let mut wt_manager = WtManager::new(44100.0);
+    /// wt_manager.set_num_octaces(8);
+    /// ```
+    pub fn set_num_octaces(&mut self, num_octaves: usize) {
+        self.num_octaves = num_octaves;
     }
 
     /// Add table containing basic waveshapes with the given ID.
     ///
     /// The wavetable added will contain data for sine, triangle, saw and
     /// square waves, 2048 samples per wave, bandlimited with one table per
-    /// octave, for 11 octaves, covering the full range of MIDI notes for
-    /// standard tuning.
+    /// octave.
     ///
     /// The wave indices to use for querying sine, triangle, saw and square
     /// are 0.0, 1/3, 2/3 and 1.0 respectively.
@@ -79,8 +102,7 @@ impl WtManager {
     ///
     /// The wavetable added will contain the specified number of square waves
     /// with different amounts of pulse width modulation, 2048 samples per
-    /// wave, bandlimited with one table per octave, for 11 octaves, covering
-    /// the full range of MIDI notes for standard tuning.
+    /// wave, bandlimited with one table per octave.
     ///
     /// ```
     /// use wavetable::WtManager;
@@ -135,6 +157,9 @@ impl WtManager {
     /// shape with reduced number of harmonics, which means the data will
     /// consume 11 times more memory than the non-bandlimited version.
     ///
+    /// The number of octave tables to create can be configured with
+    /// set_num_octaves().
+    ///
     /// ```
     /// use wavetable::{WtManager, WtInfo};
     ///
@@ -145,21 +170,23 @@ impl WtManager {
     ///         valid: false,
     ///         name: "TestMe".to_string(),
     ///         filename: "TestMe.wav".to_string()};
-    /// let fallback = if let Some(table) = wt_manager.get_table(0) {
-    ///     table
-    /// } else {
-    ///     panic!();
-    /// };
+    /// let fallback = wt_manager.get_table(0).unwrap();
     /// wt_manager.load_table(&mut wt_info, fallback, false);
     /// ```
     pub fn load_table(&mut self, wt_info: &mut WtInfo, fallback: WavetableRef, bandlimit: bool) {
-        let result = self.reader.read_file(&wt_info.filename, None);
+        let result = self.reader.read_file(&wt_info.filename, Some(2048));
+        println!("Loaded wave file {}", wt_info.filename);
         let table = if let Ok(wt) = result {
             wt_info.valid = true;
             if bandlimit {
+                println!("Starting bandlimiting");
                 let harmonics = wt.convert_to_harmonics();
-                let mut wt_bandlimited = Wavetable::new(wt.table.len(), 11, 2048);
+                println!("Converted {} tables to harmonics with {} values each",
+                    harmonics.len(), harmonics[0].len());
+                let mut wt_bandlimited = Wavetable::new(wt.table.len(), self.num_octaves, 2048);
+                println!("Created new table, inserting harmonics");
                 wt_bandlimited.insert_harmonics(&harmonics, self.sample_rate).unwrap();
+                println!("Finished");
                 Arc::new(wt_bandlimited)
             } else {
                 wt

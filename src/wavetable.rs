@@ -331,6 +331,13 @@ impl Wavetable {
         (base_freq / 32.0) * (two.powf((-9.0) / 12.0))
     }
 
+    fn put_harmonics(table: &mut [Float], harmonics: &[Float], num_harmonics: usize, offset: usize) {
+        for freq in offset..num_harmonics {
+            let amp = harmonics[freq];
+            Wavetable::add_sine_wave(table, freq as Float, amp);
+        }
+    }
+
     /// Insert a wave from a list of harmonic amplitudes.
     ///
     /// The list of harmonics contains their relative amplitude. After adding
@@ -348,9 +355,9 @@ impl Wavetable {
             return Err(WrongTableNum); // Number of waveshapes doesn't match
         }
 
-        let mut amp: Float;
         let num_values = self.num_values;
 
+        let mut amp: Float;
         for (i, ref mut table) in self.table.iter_mut().enumerate() { // For each waveshape
             let mut start_freq = Wavetable::get_start_frequency(440.0);
 
@@ -370,6 +377,53 @@ impl Wavetable {
                 Wavetable::normalize(&mut table[from..to]);
             }
         }
+
+        /*
+        for (i, ref mut table) in self.table.iter_mut().enumerate() { // For each waveshape
+            //println!("Creating table {}", i);
+            // Calculate start freq for highest octave
+            let lowest_freq = Wavetable::get_start_frequency(440.0);
+            let mut start_freq = lowest_freq * (2 << self.num_octaves - 2) as Float;
+
+            // Calculate num_harmonics for highest octave
+            let num_harmonics = Wavetable::calc_num_harmonics(start_freq, sample_freq);
+            let mut num_harmonics = cmp::min(num_harmonics, harmonics[0].len());
+
+            // Insert waves into highest octave
+            let mut current_octave = self.num_octaves - 1;
+            let mut from = current_octave * num_values;
+            let mut to = (current_octave + 1) * num_values;
+            let mut offset = 0;
+            //println!("Octave {}: start_freq = {}, highest_freq = {}, inserting {} harmonics, offset {}",
+                //current_octave, start_freq, start_freq * 2.0, num_harmonics, offset);
+            Wavetable::put_harmonics(&mut table[from..to], &harmonics[i], num_harmonics, offset);
+
+            // For all lower octaves:
+            while current_octave > 0 {
+                current_octave -= 1;
+                offset = num_harmonics;
+                // - Copy higher octave into lower octave memory
+                from = current_octave * num_values;
+                to = (current_octave + 1) * num_values;
+                for j in from..to {
+                    table[j] = table[j + num_values];
+                }
+                // - Calculate highest harmonic
+                start_freq /= 2.0;
+                num_harmonics = Wavetable::calc_num_harmonics(start_freq, sample_freq);
+                num_harmonics = cmp::min(num_harmonics, harmonics[0].len());
+                //println!("Octave {}: start_freq = {}, highest_freq = {}, inserting {} harmonics, offset {}",
+                    //current_octave, start_freq, start_freq * 2.0, num_harmonics, offset);
+                // - Insert harmonic difference to previous table
+                Wavetable::put_harmonics(&mut table[from..to], &harmonics[i], num_harmonics, offset);
+            }
+            // Normalize all tables
+            for i in 0..self.num_octaves {
+                Wavetable::normalize(&mut table[i * num_values..(i + 1) * num_values]);
+            }
+        }
+        */
+
         Ok(())
     }
 
@@ -390,7 +444,6 @@ impl Wavetable {
         let num_samples = self.num_samples;
         let table = self.get_wave_mut(table_id);
         let offset_b = (num_samples as Float * offset_b) as usize;
-        info!("Combining source tables into table {}, offset {}", table_id, offset_b);
         let mut index_b: usize;
         for i in 0..num_octaves {
             let from = i * num_values;

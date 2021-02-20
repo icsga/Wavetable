@@ -1,4 +1,4 @@
-use wavetable::{WtManager, WtInfo};
+use wavetable::WtReader;
 
 use flexi_logger::{Logger, opt_format};
 
@@ -12,25 +12,17 @@ fn main () {
                             .unwrap();
 
     let filename = std::env::args().nth(1).expect("Please give name of wave file to load as argument");
-    let mut wt_manager = WtManager::new(44100.0);
-    wt_manager.add_basic_tables(0);
-    let fallback = wt_manager.get_table(0).unwrap();
-    let mut wt_info = WtInfo{
-        id: 1,
-        valid: false,
-        name: filename.clone(),
-        filename: filename.clone()};
-    wt_manager.load_table(&mut wt_info, fallback, true);
-    let result = wt_manager.get_table(1);
+    let reader = WtReader::new(".");
+    let result = reader.read_file(&filename, Some(2048));
     match result {
-        Some(wt_ref) => {
+        Ok(wt_ref) => {
             println!("Got wavetable with {} tables, for {} octaves, with {} samples and {} values per octave",
                 wt_ref.num_tables,
                 wt_ref.num_octaves,
                 wt_ref.num_samples,
                 wt_ref.num_values);
         },
-        None => {
+        Err(_) => {
             println!("Failed to load file {} as wave table", filename);
         }
     }
