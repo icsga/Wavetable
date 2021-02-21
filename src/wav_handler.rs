@@ -90,6 +90,12 @@ struct Chunk {
     data: Box<Vec<u8>>,
 }
 
+impl Chunk {
+    pub fn new(chunk_id: u32, size: u32) -> Chunk {
+        Chunk{chunk_id, size, data: Box::new(vec![0_u8; size as usize])}
+    }
+}
+
 /// Container for the different sample data types.
 #[derive(Debug)]
 pub enum WavDataType {
@@ -158,7 +164,7 @@ impl WavData {
             chunks: vec!{}}
     }
 
-    pub fn new_from_vector(samples: Box<WavDataType>) -> WavData {
+    pub fn new_from_data(samples: Box<WavDataType>) -> WavData {
         let info = FmtChunk::new(&samples);
         let data = DataChunk{size: samples.get_num_samples(), data: samples};
         let chunks = vec!{};
@@ -168,7 +174,7 @@ impl WavData {
             chunks}
     }
 
-    fn add_chunk(&mut self, data: Chunk) {
+    pub fn add_chunk(&mut self, data: Chunk) {
         self.chunks.push(data);
     }
 
@@ -452,6 +458,15 @@ impl WavHandler {
     fn get_id_name(value: u32) -> String {
         let bytes = value.to_le_bytes();
         String::from_utf8(bytes.to_vec()).expect("Found invalid UTF-8")
+    }
+
+    // ====================
+    // Writing of WAV files
+    // ====================
+
+    pub fn write_file(data: WavData, filename: &str) {
+        // Calculate total size (chunks + data)
+        let size = 
     }
 }
 

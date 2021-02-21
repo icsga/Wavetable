@@ -198,6 +198,10 @@ impl WtManager {
         self.add_to_cache(wt_info.id, table);
     }
 
+    pub fn write_table(&self, wt_ref: WavetableRef, filename: &str) {
+        self.reader.write_file(wt_ref, filename);
+    }
+
     // Adds a wavetable with the given ID to the internal cache.
     pub fn add_to_cache(&mut self, id: usize, wt: WavetableRef) {
         self.cache.insert(id, wt);

@@ -6,7 +6,7 @@
 //! 2. Multiple waves as read from file: This will create multiple arrays of
 //!    samples, each containing one cycle of a waveform.
 //!
-use super::{Wavetable, WavetableRef, WavHandler, WavData, WavDataType, FmtChunk};
+use super::{Wavetable, WavetableRef, WavHandler, WavData, WavDataType, Chunk, FmtChunk};
 use super::Float;
 
 use log::{debug, error, info};
@@ -17,6 +17,8 @@ use std::fs::File;
 use std::io::{Read, BufReader};
 use std::mem;
 use std::sync::Arc;
+
+const YAZZ_WT_CHUNK_ID: u32 = 0x7A7A4179;
 
 pub struct WtReader {
     base_path: String,
@@ -231,6 +233,14 @@ impl WtReader {
             Wavetable::normalize(table);
         }
         Ok(Arc::new(wt))
+    }
+
+    pub fn write_file(&self, wt_ref: WavetableRef, filename: &str) {
+        let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(wt_ref.table[0].clone()));
+        let wav_data = WavData::new_from_data(samples);
+        let yazz_chunk = Chunk::new(YAZZ_WT_CHUNK_ID, mem::size_of::<usize>() * 3);
+        wav_data.add_chunk(yazz_chunk);
+        WavHandler::write_file(wav_data, filename);
     }
 }
 
