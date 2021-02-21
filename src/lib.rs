@@ -11,7 +11,7 @@ pub mod wt_oscillator;
 pub mod wt_reader;
 
 pub use self::wavetable::{Wavetable, WavetableRef};
-pub use wav_handler::{WavHandler, WavData, WavDataType, FmtChunk};
+pub use wav_handler::{WavHandler, WavData, WavDataType, Chunk, FmtChunk};
 pub use wt_creator::WtCreator;
 pub use wt_manager::{WtManager, WtInfo};
 pub use wt_oscillator:: WtOsc;

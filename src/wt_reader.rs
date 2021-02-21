@@ -18,7 +18,7 @@ use std::io::{Read, BufReader};
 use std::mem;
 use std::sync::Arc;
 
-const YAZZ_WT_CHUNK_ID: u32 = 0x7A7A4179;
+const YAZZ_WT_CHUNK_ID: u32 = 0x7A7A6179;
 
 pub struct WtReader {
     base_path: String,
@@ -235,12 +235,18 @@ impl WtReader {
         Ok(Arc::new(wt))
     }
 
-    pub fn write_file(&self, wt_ref: WavetableRef, filename: &str) {
+    pub fn write_file(&self, wt_ref: WavetableRef, filename: &str) -> Result<(), ()> {
+        // TODO: BROKEN! This writes only the first table, and it includes all
+        // the double samples at the end of each waveform. We need to split it
+        // up into slices to write.
         let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(wt_ref.table[0].clone()));
-        let wav_data = WavData::new_from_data(samples);
-        let yazz_chunk = Chunk::new(YAZZ_WT_CHUNK_ID, mem::size_of::<usize>() * 3);
-        wav_data.add_chunk(yazz_chunk);
-        WavHandler::write_file(wav_data, filename);
+        let mut wav_data = WavData::new_from_data(samples);
+
+        // TODO: Add Yazz-specific chunk with WT information
+        //let yazz_chunk = Chunk::new(YAZZ_WT_CHUNK_ID, (mem::size_of::<usize>() * 3) as u32);
+        //wav_data.add_chunk(yazz_chunk);
+
+        WavHandler::write_file(&wav_data, filename)
     }
 }
 
@@ -276,7 +282,7 @@ fn base_path_is_set_up_correctly() {
 #[test]
 fn u8_can_be_converted() {
     let data = vec![0_u8, 255_u8];
-    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    let wav_data = WavData::new_from_data(Box::new(WavDataType::PCM8(data)));
     let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
     assert!(wt.num_octaves == 1);
@@ -288,7 +294,7 @@ fn u8_can_be_converted() {
 #[test]
 fn i16_can_be_converted() {
     let data = vec![-32768_i16, 32767_i16];
-    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM16(data)));
+    let wav_data = WavData::new_from_data(Box::new(WavDataType::PCM16(data)));
     let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
     assert!(wt.num_octaves == 1);
@@ -300,7 +306,7 @@ fn i16_can_be_converted() {
 #[test]
 fn f32_can_be_converted() {
     let data = vec![-1.0_f32, -0.1234_f32, 0.0_f32, 0.1234_f32, 1.0_f32];
-    let wav_data = WavData::new_from_vector(Box::new(WavDataType::FLOAT32(data)));
+    let wav_data = WavData::new_from_data(Box::new(WavDataType::FLOAT32(data)));
     let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
     assert!(wt.num_octaves == 1);
@@ -312,7 +318,7 @@ fn f32_can_be_converted() {
 #[test]
 fn f64_can_be_converted() {
     let data = vec![-1.0_f64, -0.1234_f64, 0.0_f64, 0.1234_f64, 1.0_f64];
-    let wav_data = WavData::new_from_vector(Box::new(WavDataType::FLOAT64(data)));
+    let wav_data = WavData::new_from_data(Box::new(WavDataType::FLOAT64(data)));
     let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
     assert!(wt.num_octaves == 1);
@@ -324,7 +330,7 @@ fn f64_can_be_converted() {
 #[test]
 fn u8_is_interpolated_correctly() {
     let data = vec![0_u8, 64_u8, 128_u8, 192_u8, 255_u8];
-    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    let wav_data = WavData::new_from_data(Box::new(WavDataType::PCM8(data)));
     let wt = WtReader::create_wavetable(&wav_data, None).unwrap();
     assert!(wt.num_tables == 1);
     assert!(wt.num_octaves == 1);
@@ -336,7 +342,7 @@ fn u8_is_interpolated_correctly() {
 #[test]
 fn wrong_number_of_channels_is_rejected() {
     let data = vec![0_u8, 64_u8, 128_u8, 192_u8, 255_u8];
-    let mut wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    let mut wav_data = WavData::new_from_data(Box::new(WavDataType::PCM8(data)));
     wav_data.get_fmt_mut().num_channels = 2;
     let result = WtReader::create_wavetable(&wav_data, None);
     assert!(if let Err(_) = result { true } else { false });
@@ -345,7 +351,7 @@ fn wrong_number_of_channels_is_rejected() {
 #[test]
 fn wrong_number_of_samples_is_rejected() {
     let data = vec![0_u8, 64_u8, 128_u8, 192_u8, 255_u8];
-    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    let wav_data = WavData::new_from_data(Box::new(WavDataType::PCM8(data)));
     let result = WtReader::create_wavetable(&wav_data, Some(4));
     assert!(if let Err(_) = result { true } else { false });
 }
@@ -353,7 +359,7 @@ fn wrong_number_of_samples_is_rejected() {
 #[test]
 fn multiple_tables_can_be_read() {
     let data = vec![0_u8, 64_u8, 128_u8, 192_u8, 255_u8, 0_u8, 64_u8, 128_u8, 192_u8, 255_u8];
-    let wav_data = WavData::new_from_vector(Box::new(WavDataType::PCM8(data)));
+    let wav_data = WavData::new_from_data(Box::new(WavDataType::PCM8(data)));
     let wt = WtReader::create_wavetable(&wav_data, Some(5)).unwrap();
     assert!(wt.num_tables == 2);
     assert!(wt.num_octaves == 1);
@@ -366,7 +372,7 @@ fn multiple_tables_can_be_read() {
 #[test]
 fn samples_are_interpolated_correctly() {
     let data = vec![-1.0_f32, 1.0_f32];
-    let wav_data = WavData::new_from_vector(Box::new(WavDataType::FLOAT32(data)));
+    let wav_data = WavData::new_from_data(Box::new(WavDataType::FLOAT32(data)));
     let wt = WtReader::create_wavetable(&wav_data, Some(5)).unwrap();
     assert!(wt.num_tables == 1);
     assert!(wt.num_octaves == 1);

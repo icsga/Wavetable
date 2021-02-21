@@ -24,6 +24,7 @@ fn main () {
                 data.get_num_samples(),
                 info.get_num_channels(),
                 data.get_type());
+            println!("{:?}", info);
         },
         Err(()) => println!("Failed to read file {}", filename),
     }
