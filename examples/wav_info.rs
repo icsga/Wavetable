@@ -16,10 +16,10 @@ fn main () {
     match result {
         Ok(wav_file) => {
             let info = wav_file.get_fmt();
-            let data = wav_file.get_data();
+            let data = wav_file.get_samples();
             println!("{}:", filename);
             println!("{} bytes with {} bits per sample, resulting in {} samples in {} channels, format {}",
-                wav_file.get_data_size(),
+                wav_file.get_num_bytes(),
                 info.get_bits_per_sample(),
                 data.get_num_samples(),
                 info.get_num_channels(),

@@ -18,11 +18,11 @@ fn main () {
         Err(_) => return,
     };
     println!("{} bytes with {} bits per sample, resulting in {} samples in {} channels, format {}",
-        wav_file.get_data_size(),
+        wav_file.get_num_bytes(),
         wav_file.get_fmt().get_bits_per_sample(),
         wav_file.get_num_samples(),
         wav_file.get_fmt().get_num_channels(),
-        wav_file.get_data().get_type());
+        wav_file.get_samples().get_type());
 
     let reader = WtReader::new(".");
     let result = WtReader::create_wavetable(&wav_file, Some(wav_file.get_num_samples()));

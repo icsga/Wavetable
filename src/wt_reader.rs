@@ -107,9 +107,9 @@ impl WtReader {
             error!("Only single channel files supported");
             return Err(());
         }
-        let table_size = if let Some(num_samples) = samples_per_table { num_samples } else { wav_file.get_data().get_num_samples() };
+        let table_size = if let Some(num_samples) = samples_per_table { num_samples } else { wav_file.get_samples().get_num_samples() };
         info!("Creating wavetable with {} samples", table_size);
-        match &**wav_file.get_data() {
+        match &**wav_file.get_samples() {
             WavDataType::PCM8(data) => WtReader::convert_wav_to_table(&data, 0_u8, 255_u8, table_size),
             WavDataType::PCM16(data) => WtReader::convert_wav_to_table(&data, -32768_i16, 32767_i16, table_size),
             WavDataType::FLOAT32(data) => WtReader::convert_wav_to_table(&data, -1.0_f32, 1.0_f32, table_size),
@@ -241,7 +241,7 @@ impl WtReader {
         let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(wt_ref.table[0].clone()));
         let mut wav_data = WavData::new_from_data(samples);
         println!("Added first table, {} samples with size {}",
-            wav_data.get_num_samples(), wav_data.get_data_size());
+            wav_data.get_num_samples(), wav_data.get_num_bytes());
         for table in wt_ref.table.iter().skip(1) {
             let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(table.clone()));
             wav_data.append_samples(samples).unwrap();
@@ -264,7 +264,6 @@ fn values_match(actual: &Vec<Float>, expected: &Vec<Float>, delta: Float) -> boo
     if actual.len() != expected.len() {
         return false;
     }
-    //println!("Actual: {:?}\nExpected: {:?}", actual, expected);
     for i in 0..actual.len() {
         let diff = actual[i] - expected[i];
         if diff > delta || diff < -delta {
