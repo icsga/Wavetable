@@ -179,15 +179,7 @@ impl WtManager {
         let table = if let Ok(wt) = result {
             wt_info.valid = true;
             if bandlimit {
-                println!("Starting bandlimiting");
-                let harmonics = wt.convert_to_harmonics();
-                println!("Converted {} tables to harmonics with {} values each",
-                    harmonics.len(), harmonics[0].len());
-                let mut wt_bandlimited = Wavetable::new(wt.table.len(), self.num_octaves, 2048);
-                println!("Created new table, inserting harmonics");
-                wt_bandlimited.insert_harmonics(&harmonics, self.sample_rate).unwrap();
-                println!("Finished");
-                Arc::new(wt_bandlimited)
+                WtManager::bandlimit(wt, self.num_octaves, self.sample_rate)
             } else {
                 wt
             }
@@ -198,8 +190,20 @@ impl WtManager {
         self.add_to_cache(wt_info.id, table);
     }
 
+    pub fn bandlimit(wt: WavetableRef, num_octaves: usize, sample_rate: Float) -> WavetableRef {
+        println!("Starting bandlimiting for {} octaves", num_octaves);
+        let harmonics = wt.convert_to_harmonics();
+        println!("Converted {} tables to harmonics with {} values each",
+            harmonics.len(), harmonics[0].len());
+        let mut wt_bandlimited = Wavetable::new(wt.table.len(), num_octaves, wt.num_samples);
+        println!("Created new table, inserting harmonics");
+        wt_bandlimited.insert_harmonics(&harmonics, sample_rate).unwrap();
+        println!("Finished");
+        Arc::new(wt_bandlimited)
+    }
+
     pub fn write_table(&self, wt_ref: WavetableRef, filename: &str) {
-        self.reader.write_file(wt_ref, filename);
+        self.reader.write_file(wt_ref, filename).unwrap();
     }
 
     // Adds a wavetable with the given ID to the internal cache.

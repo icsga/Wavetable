@@ -1,5 +1,6 @@
 use std::fs::File;
-use std::io::{Read, Write, BufReader};
+use std::io::prelude::*;
+use std::io::{Read, Write, BufReader, SeekFrom};
 use std::mem;
 use std::process::{Command, Stdio};
 
@@ -166,6 +167,23 @@ pub struct WavData {
     chunks: Vec<Chunk>,
 }
 
+// Macro to append sample data to existing wave data if type matches
+macro_rules! extend_samples {
+    ($target:ident, $self:ident, $samples:ident, $x:ident::$y:ident) => {
+        {
+            if let $x::$y(s) = *$samples {
+                let size = s.len();
+                $target.extend(s);
+                $self.data.size = $target.len() * ($self.info.bits_per_sample / 8) as usize;
+                println!("Added {} samples, new size: {} with {} samples",
+                    size, $self.get_data_size(), $self.get_num_samples());
+            } else {
+                return Err(());
+            }
+        }
+    }
+}
+
 impl WavData {
     pub fn new() -> WavData {
         WavData{
@@ -174,6 +192,7 @@ impl WavData {
             chunks: vec!{}}
     }
 
+    /// Create a struct containing the given list of samples.
     pub fn new_from_data(samples: Box<WavDataType>) -> WavData {
         let info = FmtChunk::new(&samples);
         let data = DataChunk{size: samples.get_num_bytes(), data: samples};
@@ -184,16 +203,34 @@ impl WavData {
             chunks}
     }
 
+    /// Append the given samples to the already existing samples.
+    pub fn append_samples(&mut self, samples: Box<WavDataType>) -> Result<(), ()> {
+        match &mut **self.get_data_mut() {
+            WavDataType::PCM8(ref mut v) => extend_samples!(v, self, samples, WavDataType::PCM8),
+            WavDataType::PCM16(ref mut v) => extend_samples!(v, self, samples, WavDataType::PCM16),
+            WavDataType::FLOAT32(ref mut v) => extend_samples!(v, self, samples, WavDataType::FLOAT32),
+            WavDataType::FLOAT64(ref mut v) => extend_samples!(v, self, samples, WavDataType::FLOAT64),
+        }
+        Ok(())
+    }
+
+    /// Add an arbitraty chunk to the list of chunks.
     pub fn add_chunk(&mut self, data: Chunk) {
         self.chunks.push(data);
     }
 
+    /// Get the FMT chunk.
     pub fn get_fmt(&self) -> &FmtChunk {
         &self.info
     }
 
+    /// Get mutable reference to the FMT chunk.
     pub fn get_fmt_mut(&mut self) -> &mut FmtChunk {
         &mut self.info
+    }
+
+    pub fn get_num_samples(&self) -> usize {
+        self.get_data().get_num_samples()
     }
 
     /// Get the number of sample bytes.
@@ -204,6 +241,11 @@ impl WavData {
     /// Get the vector with sample data.
     pub fn get_data(&self) -> &Box<WavDataType> {
         return &self.data.data;
+    }
+
+    /// Get the vector with sample data.
+    pub fn get_data_mut(&mut self) -> &mut Box<WavDataType> {
+        return &mut self.data.data;
     }
 }
 
@@ -282,18 +324,18 @@ impl WavHandler {
     ///
     /// ``` no_run
     /// use wavetable::WavHandler;
-    /// use std::io::BufReader;
+    /// use std::io::Cursor;
     ///
     /// # fn main() -> Result<(), ()> {
     ///
     /// let data: &[u8] = &[0x00]; // Some buffer with wave data
-    /// let buffer = BufReader::new(data);
+    /// let buffer = Cursor::new(data);
     /// let wave_data = WavHandler::read_content(buffer)?;
     ///
     /// # Ok(())
     /// # }
     /// ```
-    pub fn read_content<R: Read>(mut source: R) -> Result<WavData, ()> {
+    pub fn read_content<R: Read + Seek>(mut source: R) -> Result<WavData, ()> {
         // Read RIFF header and filetype
         let result = WavHandler::read_riff_container(&mut source, CID_WAVE);
         let size = match result {
@@ -382,14 +424,15 @@ impl WavHandler {
         Ok(data_size)
     }
 
+    // Read an arbitrary object from the input stream.
     fn read_object<R: Read, T>(source: &mut R) -> Result<T, ()> {
         let mut object: T = unsafe { mem::zeroed() };
         let object_size = mem::size_of::<T>();
         unsafe {
             let object_slice = std::slice::from_raw_parts_mut(&mut object as *mut _ as *mut u8, object_size);
             if let Err(_) = source.read_exact(object_slice) {
-                // If we can't read a full header, we might simply have reached
-                // the end of the file. Return Err to signal no header was read.
+                // If we can't read the full object, we might have reached the
+                // end of the file. Return Err to signal nothing was read.
                 return Err(());
             }
             trace!("Read object of {} bytes", object_size);
@@ -457,11 +500,8 @@ impl WavHandler {
     }
 
     // Skip over the rest of the current chunk to the next header.
-    fn skip_chunk<R: Read>(source: &mut R, num_bytes: u32) {
-        let mut buf: [u8; 1] = unsafe { mem::zeroed() };
-        for _i in 0..num_bytes {
-            source.read(&mut buf).unwrap();
-        }
+    fn skip_chunk<R: Read + Seek>(source: &mut R, num_bytes: u32) {
+        source.seek(SeekFrom::Current(num_bytes as i64)).unwrap();
     }
 
     // Convert a given chunk ID from u32 to printable string.
@@ -474,6 +514,10 @@ impl WavHandler {
     // Writing of WAV files
     // ====================
 
+    /// Write the given WavData to a file.
+    ///
+    /// This writes the fmt chunk, any additional chunks and the sample data to
+    /// the file.
     pub fn write_file(data: &WavData, filename: &str) -> Result<(), ()> {
         let result = File::create(filename);
         if let Ok(mut file) = result {
@@ -486,6 +530,7 @@ impl WavHandler {
         }
     }
 
+    // Write the WAV data to the given output stream.
     fn write_content<W: Write>(dest: &mut W, data: &WavData) -> Result<(), std::io::Error> {
         // Calculate size:
         // - 4 bytes for "WAVE" header
@@ -527,6 +572,7 @@ impl WavHandler {
         Ok(())
     }
 
+    // Write a chunk to the output stream.
     fn write_chunk<W: Write, T: Sized>(dest: &mut W, cid: u32, data: &T, size: usize) -> Result<(), std::io::Error> {
         dest.write(&cid.to_le_bytes())?;
         dest.write(&(size as u32).to_le_bytes())?;
@@ -537,10 +583,18 @@ impl WavHandler {
         Ok(())
     }
 
+    // Write the sample data to the output stream.
+    //
+    // TODO: This currently directly writes the sample data, without byte order
+    // conversion. Might need an update to work on other architectures.
     fn write_samples<W: Write, T: Sized>(dest: &mut W, data: &[T], num_bytes: usize) -> Result<(), std::io::Error> {
         unsafe {
             let samples = ::std::slice::from_raw_parts((data as *const _) as *const u8, num_bytes);
             dest.write(samples)?;
+        }
+        // Check if we need to add one byte for padding
+        if (num_bytes & 0x01) == 0x01 {
+            dest.write(&[0x00])?;
         }
         Ok(())
     }
@@ -559,8 +613,7 @@ impl TestContext {
     }
 
     pub fn test(&mut self, ptr: &[u8]) -> bool {
-        let reader = BufReader::new(ptr);
-        let result = WavHandler::read_content(reader);
+        let result = self.get_data(ptr);
         match result {
             Ok(_) => true,
             Err(()) => false
@@ -568,7 +621,8 @@ impl TestContext {
     }
 
     pub fn get_data(&mut self, ptr: &[u8]) -> Result<WavData, ()> {
-        let reader = BufReader::new(ptr);
+        use std::io::Cursor;
+        let reader = Cursor::new(ptr);
         WavHandler::read_content(reader)
     }
 
@@ -1063,8 +1117,112 @@ fn f64_can_be_written() {
         0x99, 0x99, 0xb9, 0x3f,
     ];
     let result = context.put_data(samples);
+    assert!(result == expected);
+}
+
+#[test]
+fn odd_number_of_u8_is_padded() {
+    let mut context = TestContext::new();
+    let samples = Box::new(WavDataType::PCM8(vec![1, 2, 3]));
+    let expected : &[u8] = &[
+        // RIFF header
+        'R' as u8, 'I' as u8, 'F' as u8, 'F' as u8,
+        0x27, 0x00, 0x00, 0x00,
+        // WAVE file ID
+        'W' as u8, 'A' as u8, 'V' as u8, 'E' as u8,
+        // fmt chunk
+        'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
+        0x10, 0x00, 0x00, 0x00,
+        0x01, 0x00,             // PCM
+        0x01, 0x00,             // 1 channel
+        0x44, 0xAC, 0x00, 0x00, // 44100 Hz
+        0x44, 0xAC, 0x00, 0x00, // Avg data rate
+        0x00, 0x00,             // Block align
+        0x08, 0x00,             // 8 bit per sample
+        // data chunk
+        'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
+        0x03, 0x00, 0x00, 0x00, // 3 u8 = 3 bytes
+        0x01, 0x02, 0x03, 0x00
+    ];
+    let result = context.put_data(samples);
     //show_data(&result);
     assert!(result == expected);
 }
 
-// TODO: Test writing odd number of sample bytes (padding)
+#[test]
+fn samples_can_be_appended_to_u8() {
+    let samples_1 = Box::new(WavDataType::PCM8(vec![1, 2, 3]));
+    let samples_2 = Box::new(WavDataType::PCM8(vec![4, 5, 6]));
+    let mut data = WavData::new_from_data(samples_1);
+    data.append_samples(samples_2).unwrap();
+    assert!(data.get_num_samples() == 6);
+    assert!(data.get_data_size() == 6);
+}
+
+#[test]
+fn samples_can_be_appended_to_i16() {
+    let samples_1 = Box::new(WavDataType::PCM16(vec![1, 2, 3]));
+    let samples_2 = Box::new(WavDataType::PCM16(vec![4, 5, 6]));
+    let mut data = WavData::new_from_data(samples_1);
+    data.append_samples(samples_2).unwrap();
+    assert!(data.get_num_samples() == 6);
+    assert!(data.get_data_size() == 12);
+}
+
+#[test]
+fn samples_can_be_appended_to_f32() {
+    let samples_1 = Box::new(WavDataType::FLOAT32(vec![1.0, 2.0, 3.0]));
+    let samples_2 = Box::new(WavDataType::FLOAT32(vec![4.0, 5.0, 6.0]));
+    let mut data = WavData::new_from_data(samples_1);
+    data.append_samples(samples_2).unwrap();
+    assert!(data.get_num_samples() == 6);
+    assert!(data.get_data_size() == 24);
+}
+
+#[test]
+fn samples_can_be_appended_to_f64() {
+    let samples_1 = Box::new(WavDataType::FLOAT64(vec![1.0, 2.0, 3.0]));
+    let samples_2 = Box::new(WavDataType::FLOAT64(vec![4.0, 5.0, 6.0]));
+    let mut data = WavData::new_from_data(samples_1);
+    data.append_samples(samples_2).unwrap();
+    assert!(data.get_num_samples() == 6);
+    assert!(data.get_data_size() == 48);
+}
+
+#[test]
+fn append_data_missmatch_is_detected() {
+    let samples_1 = Box::new(WavDataType::FLOAT64(vec![1.0, 2.0, 3.0]));
+    let samples_2 = Box::new(WavDataType::FLOAT32(vec![4.0, 5.0, 6.0]));
+    let mut data = WavData::new_from_data(samples_1);
+    let result = data.append_samples(samples_2);
+    assert!(matches!(result, Err(_)));
+}
+
+#[test]
+fn custom_chunk_can_be_added() {
+    let mut context = TestContext::new();
+    let samples = Box::new(WavDataType::PCM8(vec![1, 2, 3]));
+    let expected : &[u8] = &[
+        // RIFF header
+        'R' as u8, 'I' as u8, 'F' as u8, 'F' as u8,
+        0x27, 0x00, 0x00, 0x00,
+        // WAVE file ID
+        'W' as u8, 'A' as u8, 'V' as u8, 'E' as u8,
+        // fmt chunk
+        'f' as u8, 'm' as u8, 't' as u8, ' ' as u8,
+        0x10, 0x00, 0x00, 0x00,
+        0x01, 0x00,             // PCM
+        0x01, 0x00,             // 1 channel
+        0x44, 0xAC, 0x00, 0x00, // 44100 Hz
+        0x44, 0xAC, 0x00, 0x00, // Avg data rate
+        0x00, 0x00,             // Block align
+        0x08, 0x00,             // 8 bit per sample
+        // data chunk
+        'd' as u8, 'a' as u8, 't' as u8, 'a' as u8,
+        0x03, 0x00, 0x00, 0x00, // 3 u8 = 3 bytes
+        0x01, 0x02, 0x03, 0x00
+    ];
+    let result = context.put_data(samples);
+    //show_data(&result);
+    assert!(result == expected);
+}

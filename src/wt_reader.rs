@@ -98,11 +98,11 @@ impl WtReader {
         WtReader::create_wavetable(&wav_file, samples_per_table)
     }
 
-    // Convert a given wave file data to a wavetable.
-    //
-    // Source is wave struct containing sample data in Vec<u8> format.
-    // samples_per_table is the length of a single wave cycle, usually 2048.
-    fn create_wavetable(wav_file: &WavData, samples_per_table: Option<usize>) -> Result<WavetableRef, ()> {
+    /// Convert a given wave file data to a wavetable.
+    ///
+    /// Source is wave struct containing sample data in Vec<u8> format.
+    /// samples_per_table is the length of a single wave cycle, usually 2048.
+    pub fn create_wavetable(wav_file: &WavData, samples_per_table: Option<usize>) -> Result<WavetableRef, ()> {
         if wav_file.get_fmt().num_channels > 1 {
             error!("Only single channel files supported");
             return Err(());
@@ -236,11 +236,16 @@ impl WtReader {
     }
 
     pub fn write_file(&self, wt_ref: WavetableRef, filename: &str) -> Result<(), ()> {
-        // TODO: BROKEN! This writes only the first table, and it includes all
-        // the double samples at the end of each waveform. We need to split it
-        // up into slices to write.
+        // TODO: BROKEN! This includes all the double samples at the end of
+        // each waveform. We need to split it up into slices to write.
         let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(wt_ref.table[0].clone()));
         let mut wav_data = WavData::new_from_data(samples);
+        println!("Added first table, {} samples with size {}",
+            wav_data.get_num_samples(), wav_data.get_data_size());
+        for table in wt_ref.table.iter().skip(1) {
+            let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(table.clone()));
+            wav_data.append_samples(samples).unwrap();
+        }
 
         // TODO: Add Yazz-specific chunk with WT information
         //let yazz_chunk = Chunk::new(YAZZ_WT_CHUNK_ID, (mem::size_of::<usize>() * 3) as u32);

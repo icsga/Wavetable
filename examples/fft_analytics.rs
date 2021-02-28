@@ -3,14 +3,16 @@ extern crate wavetable;
 use wavetable::Wavetable;
 use wavetable::WtManager;
 
+use std::sync::Arc;
+
 fn main() {
     let sample_rate = 44100.0;
-    let basic_wave_id = 0;
 
     // Create the wavetable manager and add the default waveshapes to
     // the cache.
     //
     let mut wt_manager = WtManager::new(sample_rate);
+    let basic_wave_id = 0;
     wt_manager.add_basic_tables(basic_wave_id);   // Add the basic waveshapes with ID 0
 
     // Do an FFT of the default waves.
@@ -29,16 +31,9 @@ fn main() {
     //
     let mut wt_new = Wavetable::new(4, 11, 2048); // Reserve space for 4 waveshapes with 11 octave tables each
     wt_new.insert_harmonics(&harmonics, sample_rate).unwrap();
-
-    // Print the four waves to stdout (pipe output to file to plot it with gnuplot)
-    //
-    let octave = 0; // 0 = lowest. Change to a value from 1 to 10 to show the higher octaves with fewer harmonics
-    for i in 0..wt_new.table.len() {    // For all waveshapes
-        let table = &wt_new.table[i];
-        for k in 0..2048 {              // For all samples of one octave table
-            println!("{}: {}", k + (i * 2048), table[k + (octave * 2049)]);
-        }
-    }
+    
+    let wt_new = Arc::new(wt_new);
+    wt_manager.write_table(wt_new, "out.wav");
 }
 
 
