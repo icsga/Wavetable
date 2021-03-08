@@ -11,7 +11,7 @@ pub mod wt_manager;
 pub mod wt_oscillator;
 pub mod wt_reader;
 
-pub use self::wavetable::{Wavetable, WavetableRef};
+pub use self::wavetable::{Wavetable, WavetableRef, Harmonic};
 pub use wav_data::{WavData, WavDataType, Chunk, FmtChunk};
 pub use wav_handler::WavHandler;
 pub use wt_creator::WtCreator;

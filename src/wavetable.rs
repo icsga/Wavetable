@@ -48,13 +48,15 @@ pub const COS_FUNC: fn(Float) -> Float = f32::cos;
 // Public error types
 
 #[derive(Debug)]
-pub struct WrongTableNum;
-impl fmt::Display for WrongTableNum {
+pub struct WrongTableSize;
+impl fmt::Display for WrongTableSize {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Wrong number of tables")
     }
 }
-impl std::error::Error for WrongTableNum { }
+impl std::error::Error for WrongTableSize { }
+
+pub type Harmonic = Complex<Float>;
 
 #[derive(Debug)]
 pub struct Wavetable {
@@ -188,11 +190,11 @@ impl Wavetable {
     /// let wt = if let Some(table) = wt_manager.get_table(0) { table } else { panic!(); };
     /// let harmonics = wt.convert_to_harmonics();
     /// ```
-    pub fn convert_to_harmonics(&self) -> Vec<Vec<Float>> {
+    pub fn convert_to_harmonics(&self) -> Vec<Vec<Harmonic>> {
         // Allocate memory
         let num_samples = self.num_samples;
-        let num_harmonics = num_samples / 2;
-        let mut harmonics = vec![vec![0.0; num_harmonics]; self.table.len()];
+        let num_harmonics = num_samples;
+        let mut harmonics = vec![vec![Harmonic::new(0.0, 0.0); num_harmonics]; self.table.len()];
         println!("Creating {} lists of harmonics with {} entries each for waves with {} samples",
             self.table.len(), num_harmonics, num_samples);
 
@@ -200,7 +202,6 @@ impl Wavetable {
         let mut buffer: Vec<Complex<Float>> = vec![Complex::zero(); num_samples];
         let mut planner = FftPlanner::new();
         let fft = planner.plan_fft_forward(num_samples);
-        let mut value: Float;
 
         // For all waveshapes in the Wavetable
         for (i, ref table) in self.table.iter().enumerate() {
@@ -214,26 +215,14 @@ impl Wavetable {
 
             // Process buffer
             fft.process(&mut buffer);
-
-            // Find scale of output
-            let mut max: Float = 0.0;
-            for sample in buffer.iter() {
-                max = max.max(sample.im.abs());
-            }
-            // Transfer output to harmonics list
-            for j in 0..num_harmonics {
-                value = buffer[j].im;
-                harmonics[i][j] = if value < 0.00001 && value > -0.00001 {
-                    0.0
-                } else {
-                    (value / max) * -1.0
-                };
+            for (j, b) in buffer.iter().enumerate() {
+                harmonics[i][j] = *b;
             }
         }
         harmonics
     }
 
-    // Add a wave with given frequency to a table.
+    // Add a wave with given frequency, apmlitude and phase to a table.
     //
     // Frequency is relative to the buffer length, so a value of 1 will put one
     // wave period into the table. The values are added to the values already
@@ -243,17 +232,25 @@ impl Wavetable {
     // allow more efficient interpolation (eliminates the need for index
     // wrapping).
     //
-    // wave_func is a function receiving an input in the range [0:1] and
-    // returning a value in the same range.
+    // wave_func is a function receiving the position within the waveform as value in the range
+    // [0:1] and returning the amplitude for that position as a value in the same range.
     //
-    fn add_wave(table: &mut [Float], freq: Float, amplitude: Float, wave_func: fn(Float) -> Float) {
+    fn add_wave(table: &mut [Float],
+                freq: Float,
+                amplitude: Float,
+                phase: Float,
+                wave_func: fn(Float) -> Float) {
         let extra_sample = table.len() & 0x01;
         let num_samples = table.len() - extra_sample;
         let num_samples_f = num_samples as Float;
         let mult = freq * 2.0 * PI;
         let mut position: Float;
         for i in 0..num_samples {
-            position = mult * (i as Float / num_samples_f);
+            let mut frac = (i as Float / num_samples_f) + phase;
+            while frac > 1.0 {
+                frac -= 1.0;
+            }
+            position = mult * frac;
             table[i] += wave_func(position) * amplitude;
         }
         if extra_sample > 0 {
@@ -274,10 +271,11 @@ impl Wavetable {
     /// let mut first_wave = wt.get_wave_mut(0);
     /// let frequency = 1.0; // wavelength = buffer size
     /// let amplitude = 1.0;
-    /// Wavetable::add_sine_wave(&mut first_wave, frequency, amplitude);
+    /// let phase = 0.0;
+    /// Wavetable::add_sine_wave(&mut first_wave, frequency, amplitude, phase);
     /// ```
-    pub fn add_sine_wave(table: &mut [Float], freq: Float, amplitude: Float) {
-        Wavetable::add_wave(table, freq, amplitude, SIN_FUNC);
+    pub fn add_sine_wave(table: &mut [Float], freq: Float, amplitude: Float, phase: Float) {
+        Wavetable::add_wave(table, freq, amplitude, phase, SIN_FUNC);
     }
 
     /// Add a cosine wave with given frequency and amplitude to the buffer.
@@ -293,10 +291,11 @@ impl Wavetable {
     /// let mut first_wave = wt.get_wave_mut(0);
     /// let frequency = 1.0; // wavelength = buffer size
     /// let amplitude = 1.0;
-    /// Wavetable::add_cosine_wave(&mut first_wave, frequency, amplitude);
+    /// let phase = 0.0;
+    /// Wavetable::add_cosine_wave(&mut first_wave, frequency, amplitude, phase);
     /// ```
-    pub fn add_cosine_wave(table: &mut [Float], freq: Float, amplitude: Float) {
-        Wavetable::add_wave(table, freq, amplitude, COS_FUNC);
+    pub fn add_cosine_wave(table: &mut [Float], freq: Float, amplitude: Float, phase: Float) {
+        Wavetable::add_wave(table, freq, amplitude, phase, COS_FUNC);
     }
 
     /// Create octave tables with given insert function.
@@ -315,7 +314,8 @@ impl Wavetable {
                          table_id: usize,
                          start_freq: Float,
                          sample_freq: Float,
-                         insert_wave: fn(&mut [Float], Float, Float)) {
+                         phase: Float,
+                         insert_wave: fn(&mut [Float], Float, Float, Float)) {
         info!("Creating table {}", table_id);
         let num_octaves = self.num_octaves;
         let num_values = self.num_values;
@@ -324,7 +324,7 @@ impl Wavetable {
         for i in 0..num_octaves {
             let from = i * num_values;
             let to = (i + 1) * num_values;
-            insert_wave(&mut table[from..to], current_freq, sample_freq);
+            insert_wave(&mut table[from..to], current_freq, sample_freq, phase);
             current_freq *= 2.0; // Next octave
         }
     }
@@ -335,95 +335,76 @@ impl Wavetable {
         (base_freq / 32.0) * (two.powf((-9.0) / 12.0))
     }
 
-    fn put_harmonics(table: &mut [Float], harmonics: &[Float], num_harmonics: usize, offset: usize) {
+    fn put_harmonics(table: &mut [Float], harmonics: &[Harmonic], num_harmonics: usize) {
         let num_harmonics = if num_harmonics >= harmonics.len() {
             harmonics.len() - 1
         } else {
             num_harmonics
         };
-        for freq in offset..num_harmonics {
-            let amp = harmonics[freq + 1];
-            Wavetable::add_sine_wave(table, (freq + 1) as Float, amp);
+        // Prepare FFT
+        let num_samples = table.len();
+        let mut buffer: Vec<Complex<Float>> = vec![Complex::zero(); harmonics.len()];
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_inverse(harmonics.len());
+
+        // Copy the FFT input
+        for i in 0..num_harmonics + 1 {
+            buffer[i] = harmonics[i];
+        }
+        fft.process(&mut buffer);
+
+        // Copy result to table
+        for i in 0..num_samples {
+            table[i] = buffer[i].re;
         }
     }
 
-    pub fn do_insert(table: &mut[Float], harmonics: &[Float], sample_freq: Float, num_octaves: usize, num_values: usize, id: usize) {
-        //println!("{}: Creating table", id);
-        // Calculate start freq for highest octave
-        let lowest_freq = Wavetable::get_start_frequency(440.0);
-        let mut start_freq = if num_octaves >= 2 {
-            lowest_freq * (2 << num_octaves - 2) as Float
-        } else {
-            lowest_freq
-        };
-
-        // Calculate num_harmonics for highest octave
-        let num_harmonics = Wavetable::calc_num_harmonics(start_freq, sample_freq);
-        let mut num_harmonics = cmp::min(num_harmonics, harmonics.len());
-
-        // Insert waves into highest octave
-        let mut current_octave = num_octaves - 1;
-        let mut from = current_octave * num_values;
-        let to = (current_octave + 1) * num_values;
-        let mut offset = 0;
-        println!("{}: Octave {}: start_freq = {}, highest_freq = {}, inserting {} harmonics, offset {}, from {} to {}",
-            id, current_octave, start_freq, start_freq * 2.0, num_harmonics, offset, from, to);
-        Wavetable::put_harmonics(&mut table[from..to], harmonics, num_harmonics, offset);
-
-        // For all lower octaves:
-        while current_octave > 0 {
-            current_octave -= 1;
-            offset = num_harmonics;
-
-            // - Copy higher octave into lower octave memory
-            from = current_octave * num_values;
-            //to = from + num_values;
-            let (dst, src) = table[from..].split_at_mut(num_values);
-            dst.clone_from_slice(&src[..num_values]);
-
-            // - Calculate highest harmonic
-            start_freq /= 2.0;
-            num_harmonics = Wavetable::calc_num_harmonics(start_freq, sample_freq);
-            num_harmonics = cmp::min(num_harmonics, harmonics.len());
-            println!("{}: Octave {}: start_freq = {}, highest_freq = {}, inserting {} harmonics, offset {}, from {} to {}",
-                id, current_octave, start_freq, start_freq * 2.0, num_harmonics, offset, from, to);
-            // - Insert harmonic difference to previous table
-            //Wavetable::put_harmonics(&mut table[from..to], &harmonics, num_harmonics, offset);
-            Wavetable::put_harmonics(dst, &harmonics, num_harmonics, offset);
+    pub fn do_insert(table: &mut[Float], harmonics: &[Harmonic], sample_freq: Float, num_octaves: usize, num_samples: usize, num_values: usize, _id: usize) {
+        let mut start_freq = Wavetable::get_start_frequency(440.0);
+        for current_octave in 0..num_octaves {
+            let num_harmonics = Wavetable::calc_num_harmonics(start_freq, sample_freq);
+            let num_harmonics = cmp::min(num_harmonics, harmonics.len());
+            let from = current_octave * num_values;
+            let to = from + num_samples;
+            Wavetable::put_harmonics(&mut table[from..to], harmonics, num_harmonics);
+            start_freq *= 2.0;
         }
         // Normalize all tables
         for i in 0..num_octaves {
             Wavetable::normalize(&mut table[i * num_values..(i + 1) * num_values]);
         }
-        //println!("{}: Finished with table", id);
     }
 
-    /// Insert a wave from a list of harmonic amplitudes.
+    /// Insert a wave from a list of harmonics.
     ///
-    /// The list of harmonics contains their relative amplitude. After adding
+    /// The list of harmonics contains the result of an FFT. After adding
     /// the harmonics to the wavetable, the total amplitude will be normalized.
     ///
-    /// ```
-    /// use wavetable::Wavetable;
     ///
-    /// let harmonics = vec![vec![0.0; 1024]];
+    /// ```
+    /// use wavetable::{Wavetable, Harmonic};
+    ///
+    /// let harmonics = vec![vec![Harmonic::new(0.0, 0.0); 2048]];
     /// let mut wt = Wavetable::new(1, 11, 2048);
     /// wt.insert_harmonics(&harmonics, 44100.0);
     /// ```
-    pub fn insert_harmonics(&mut self, harmonics: &[Vec<Float>], sample_freq: Float) -> Result<(), WrongTableNum> {
-        if harmonics.len() != self.table.len() {
-            return Err(WrongTableNum); // Number of waveshapes doesn't match
+    pub fn insert_harmonics(&mut self, harmonics: &[Vec<Harmonic>], sample_freq: Float) -> Result<(), WrongTableSize> {
+        if harmonics.len() != self.table.len()
+        || harmonics[0].len() != self.num_samples {
+            println!("{} tables of length {}, {} sets of harmonics with {} entries each",
+                self.table.len(), self.num_values, harmonics.len(), harmonics[0].len());
+            return Err(WrongTableSize); // Number of waveshapes doesn't match
         }
+        let num_samples = self.num_samples;
         let num_values = self.num_values;
         let num_octaves = self.num_octaves;
-        println!("Inserting harmonics for {} octaves", num_octaves);
 
         let mut pool = Pool::new(1);
         pool.scoped(|scope| {
             let mut i = 0;
             for table in self.table.chunks_mut(1) { // For each waveshape
                 scope.execute(move || {
-                    Wavetable::do_insert(&mut table[0], &harmonics[i], sample_freq, num_octaves, num_values, i);
+                    Wavetable::do_insert(&mut table[0], &harmonics[i], sample_freq, num_octaves, num_samples, num_values, i);
                 });
                 i += 1;
             }
@@ -565,40 +546,18 @@ fn is_close_to(actual: Float, expected: Float, delta: Float, index: usize) -> bo
     }
 }
 
-#[test]
-fn fft_on_single_freq_works() {
-    for freq in 1..1024 {
-        let mut wt = Wavetable::new(1, 1, 2048);
-        Wavetable::add_sine_wave(wt.get_wave_mut(0), freq as Float, 1.0);
-        let harmonics = wt.convert_to_harmonics();
-        for (i, h) in harmonics[0].iter().enumerate() {
-            let delta = freq as Float * 0.001;
-            if i == freq {
-                assert!(is_close_to(*h, 1.0, 0.01, i));
-            } else {
-                assert!(is_close_to(*h, 0.0, delta, i));
-            }
-        }
+fn is_close_to_wrap(actual: Float, expected: Float, delta: Float, wrap: Float, index: usize) -> bool {
+    let (mut bigger, smaller) = if actual > expected { (actual, expected) } else { (expected, actual) };
+    let mut diff = bigger - wrap;
+    while diff > -delta {
+        println!("{} close to wrap {}, reducing", bigger, wrap);
+        bigger -= wrap;
+        diff = bigger - wrap;
     }
-}
-
-#[test]
-fn fft_on_two_freqs_works() {
-    for freq in 1..2 {
-        let mut wt = Wavetable::new(1, 1, 2048);
-        Wavetable::add_sine_wave(wt.get_wave_mut(0), freq as Float, 1.0);
-        Wavetable::add_sine_wave(wt.get_wave_mut(0), (freq + 5) as Float, 1.0);
-        let harmonics = wt.convert_to_harmonics();
-        for (i, h) in harmonics[0].iter().take(20).enumerate() {
-            println!("{}: {}", i, h);
-            /*
-            let delta = freq as Float * 0.001;
-            if i == freq {
-                assert!(is_close_to(*h, 1.0, delta, i));
-            } else {
-                assert!(is_close_to(*h, 0.0, delta, i));
-            }
-            */
-        }
+    let diff = bigger - smaller;
+    if diff < delta {
+        return true;
     }
+    println!("{}: Expected {}, actual {}, delta {}", index, expected, actual, delta);
+    false
 }

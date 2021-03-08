@@ -238,16 +238,23 @@ impl WtReader {
     pub fn write_file(&self, wt_ref: WavetableRef, filename: &str) -> Result<(), ()> {
         // TODO: BROKEN! This includes all the double samples at the end of
         // each waveform. We need to split it up into slices to write.
-        let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(wt_ref.table[0].clone()));
+        #[cfg(feature = "use_double_precision")]
+            let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT64(wt_ref.table[0].clone()));
+        #[cfg(not(feature = "use_double_precision"))]
+            let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(wt_ref.table[0].clone()));
         let mut wav_data = WavData::new_from_data(samples);
         println!("Added first table, {} samples with size {}",
             wav_data.get_num_samples(), wav_data.get_num_bytes());
         for table in wt_ref.table.iter().skip(1) {
-            let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(table.clone()));
+            #[cfg(feature = "use_double_precision")]
+                let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT64(table.clone()));
+            #[cfg(not(feature = "use_double_precision"))]
+                let samples: Box<WavDataType> = Box::new(WavDataType::FLOAT32(table.clone()));
             wav_data.append_samples(samples).unwrap();
         }
 
-        // TODO: Add Yazz-specific chunk with WT information
+        // TODO: Add Wavetable-Lib-specific chunk with WT information
+        //       (Samples per table, number of tables)
         //let yazz_chunk = Chunk::new(YAZZ_WT_CHUNK_ID, (mem::size_of::<usize>() * 3) as u32);
         //wav_data.add_chunk(yazz_chunk);
 

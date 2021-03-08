@@ -158,6 +158,35 @@ impl WavDataType {
     }
 }
 
+// Trait to pack the vector with sample data into a matching enum value
+pub trait WavDataTypeGetter<T> {
+    fn get_wav_data_type(&self, data: Vec<T>) -> WavDataType;
+}
+
+impl WavDataTypeGetter<u8> for u8 {
+    fn get_wav_data_type(&self, data: Vec<u8>) -> WavDataType {
+        WavDataType::PCM8(data)
+    }
+}
+
+impl WavDataTypeGetter<i16> for i16 {
+    fn get_wav_data_type(&self, data: Vec<i16>) -> WavDataType {
+        WavDataType::PCM16(data)
+    }
+}
+
+impl WavDataTypeGetter<f32> for f32 {
+    fn get_wav_data_type(&self, data: Vec<f32>) -> WavDataType {
+        WavDataType::FLOAT32(data)
+    }
+}
+
+impl WavDataTypeGetter<f64> for f64 {
+    fn get_wav_data_type(&self, data: Vec<f64>) -> WavDataType {
+        WavDataType::FLOAT64(data)
+    }
+}
+
 // Macro to append sample data to existing wave data if type matches
 macro_rules! extend_samples {
     ($target:ident, $self:ident, $samples:ident, $enum:ident :: $variant:ident) => {
@@ -198,6 +227,7 @@ impl WavData {
             chunks}
     }
 
+    /// Take ownership of the samples contained in the DataChunk.
     pub fn set_samples(&mut self, samples: DataChunk) {
         self.data = samples;
     }
@@ -213,7 +243,7 @@ impl WavData {
         Ok(())
     }
 
-    /// Add an arbitraty chunk to the list of chunks.
+    /// Add an arbitrary chunk to the list of chunks.
     pub fn add_chunk(&mut self, data: Chunk) {
         self.chunks.push(data);
     }
@@ -228,6 +258,7 @@ impl WavData {
         &mut self.info
     }
 
+    /// Get the number of samples.
     pub fn get_num_samples(&self) -> usize {
         self.get_samples().get_num_samples()
     }
@@ -237,6 +268,7 @@ impl WavData {
         self.data.size
     }
 
+    /// Get the list of all extra chunks, not including FMT and DATA.
     pub fn get_chunks(&self) -> &[Chunk] {
         &self.chunks
     }
@@ -246,38 +278,9 @@ impl WavData {
         return &self.data.data;
     }
 
-    /// Get the vector with sample data.
+    /// Get the vector with sample data as mutable reference.
     pub fn get_samples_mut(&mut self) -> &mut Box<WavDataType> {
         return &mut self.data.data;
-    }
-}
-
-// Trait to pack the vector with sample data into a matching enum value
-pub trait WavDataTypeGetter<T> {
-    fn get_wav_data_type(&self, data: Vec<T>) -> WavDataType;
-}
-
-impl WavDataTypeGetter<u8> for u8 {
-    fn get_wav_data_type(&self, data: Vec<u8>) -> WavDataType {
-        WavDataType::PCM8(data)
-    }
-}
-
-impl WavDataTypeGetter<i16> for i16 {
-    fn get_wav_data_type(&self, data: Vec<i16>) -> WavDataType {
-        WavDataType::PCM16(data)
-    }
-}
-
-impl WavDataTypeGetter<f32> for f32 {
-    fn get_wav_data_type(&self, data: Vec<f32>) -> WavDataType {
-        WavDataType::FLOAT32(data)
-    }
-}
-
-impl WavDataTypeGetter<f64> for f64 {
-    fn get_wav_data_type(&self, data: Vec<f64>) -> WavDataType {
-        WavDataType::FLOAT64(data)
     }
 }
 
@@ -332,4 +335,17 @@ fn append_data_missmatch_is_detected() {
     let mut data = WavData::new_from_data(samples_1);
     let result = data.append_samples(samples_2);
     assert!(matches!(result, Err(_)));
+}
+
+#[test]
+fn chunk_can_be_added_and_queried() {
+    let cid_test: u32 = 0x54534554;
+    let samples = Box::new(WavDataType::PCM8(vec![1, 2, 3]));
+    let mut wav_data = WavData::new_from_data(samples);
+    let chunk_data = Box::new(vec![0x05, 0x06, 0x07, 0x08]);
+    let chunk = Chunk::new_from_data(cid_test, chunk_data);
+    wav_data.add_chunk(chunk);
+
+    let chunk_list = wav_data.get_chunks();
+    assert!(chunk_list[0].chunk_id == cid_test);
 }
