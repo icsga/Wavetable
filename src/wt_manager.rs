@@ -191,9 +191,9 @@ impl WtManager {
     }
 
     pub fn bandlimit(wt: WavetableRef, num_octaves: usize, sample_rate: Float) -> WavetableRef {
-        let harmonics = wt.convert_to_harmonics();
+        let spectrum = wt.get_freq_spectrum();
         let mut wt_bandlimited = Wavetable::new(wt.table.len(), num_octaves, wt.num_samples);
-        wt_bandlimited.insert_harmonics(&harmonics, sample_rate).unwrap();
+        wt_bandlimited.add_frequencies(&spectrum, sample_rate).unwrap();
         Arc::new(wt_bandlimited)
     }
 
