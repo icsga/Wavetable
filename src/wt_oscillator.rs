@@ -3,8 +3,6 @@
 use super::Float;
 use super::WavetableRef;
 
-use log::{info, trace, warn};
-
 const NUM_SAMPLES_PER_TABLE: usize = 2048;
 const NUM_VALUES_PER_TABLE: usize = NUM_SAMPLES_PER_TABLE + 1; // Add one sample for easier interpolation on last sample
 

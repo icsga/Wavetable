@@ -1,8 +1,5 @@
 //! A library for creating and using wavetables for sound generation.
 
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
 pub mod wavetable;
 pub mod wav_data;
 pub mod wav_handler;

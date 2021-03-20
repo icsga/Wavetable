@@ -6,19 +6,16 @@
 //! 2. Multiple waves as read from file: This will create multiple arrays of
 //!    samples, each containing one cycle of a waveform.
 //!
-use super::{Wavetable, WavetableRef, WavHandler, WavData, WavDataType, Chunk, FmtChunk};
+use super::{Wavetable, WavetableRef, WavHandler, WavData, WavDataType};
 use super::Float;
 
-use log::{debug, error, info};
+use log::{error, info};
 
-use std::convert::TryInto;
 use num::ToPrimitive;
-use std::fs::File;
-use std::io::{Read, BufReader};
 use std::mem;
 use std::sync::Arc;
 
-const YAZZ_WT_CHUNK_ID: u32 = 0x7A7A6179;
+//const YAZZ_WT_CHUNK_ID: u32 = 0x7A7A6179;
 
 pub struct WtReader {
     base_path: String,
@@ -267,6 +264,7 @@ impl WtReader {
 //                  Unit tests
 // ----------------------------------------------
 
+#[cfg(test)]
 fn values_match(actual: &Vec<Float>, expected: &Vec<Float>, delta: Float) -> bool {
     if actual.len() != expected.len() {
         return false;

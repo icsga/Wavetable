@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::{Read, Write, BufReader, SeekFrom};
 use std::mem;
-use std::process::{Command, Stdio};
 
 use log::{debug, error, info, trace};
 
@@ -364,9 +363,11 @@ impl WavHandler {
 //                  Unit tests
 // ----------------------------------------------
 
+#[cfg(test)]
 struct TestContext {
 }
 
+#[cfg(test)]
 impl TestContext {
     pub fn new() -> Self {
         TestContext{}
@@ -762,11 +763,17 @@ fn f64_can_be_read() {
     }
 }
 
+/*
+#[cfg(test)]
+use std::process::{Command, Stdio};
+
+#[cfg(test)]
 fn show_data(data: &[u8]) {
     let mut child = Command::new("xxd").stdin(Stdio::piped()).spawn().unwrap();
     let child_stdin = child.stdin.as_mut().unwrap();
     child_stdin.write_all(data).unwrap();
 }
+*/
 
 #[test]
 fn u8_can_be_written() {

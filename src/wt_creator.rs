@@ -10,7 +10,7 @@
 use super::Float;
 use super::{Wavetable, WavetableRef};
 
-use log::{info, debug, trace, warn};
+use log::{info, debug};
 
 use std::sync::Arc;
 
@@ -45,6 +45,7 @@ impl WtCreator {
         Wavetable::shift(table, table.len() & 0xFFFFFFFC, table.len() / 2);
     }
 
+    /*
     // Insert a saw wave into the given table.
     //
     // Adds all harmonics. Should be wrong, but sounds the same.
@@ -56,6 +57,7 @@ impl WtCreator {
         }
         Wavetable::normalize(table);
     }
+    */
 
     // Insert a triangular wave into the given table.
     //

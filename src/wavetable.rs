@@ -18,12 +18,11 @@
 
 use super::Float;
 
-use log::{info, debug, trace, warn};
+use log::{info, debug};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 
-use crossbeam;
 use scoped_threadpool::Pool;
 
 use std::cmp;
@@ -538,15 +537,7 @@ impl Wavetable {
 //                  Unit tests
 // ----------------------------------------------
 
-struct TestContext {
-}
-
-impl TestContext {
-    pub fn new() -> Self {
-        TestContext{}
-    }
-}
-
+#[cfg(test)]
 fn is_close_to(actual: Float, expected: Float, delta: Float, index: usize) -> bool {
     let diff = actual - expected;
     if diff > delta || diff < -delta {
@@ -555,22 +546,6 @@ fn is_close_to(actual: Float, expected: Float, delta: Float, index: usize) -> bo
     } else {
         true
     }
-}
-
-fn is_close_to_wrap(actual: Float, expected: Float, delta: Float, wrap: Float, index: usize) -> bool {
-    let (mut bigger, smaller) = if actual > expected { (actual, expected) } else { (expected, actual) };
-    let mut diff = bigger - wrap;
-    while diff > -delta {
-        println!("{} close to wrap {}, reducing", bigger, wrap);
-        bigger -= wrap;
-        diff = bigger - wrap;
-    }
-    let diff = bigger - smaller;
-    if diff < delta {
-        return true;
-    }
-    println!("{}: Expected {}, actual {}, delta {}", index, expected, actual, delta);
-    false
 }
 
 #[test]
@@ -611,7 +586,6 @@ fn single_frequency_can_be_bandlimted() {
     Wavetable::add_sine_wave(wt_ref.get_wave_mut(0), freq, amp, phase);
     let wave_ref = wt_ref.get_wave(0);
     for i in 0..num_tables {
-        println!("Testing position {}", i);
         let mut wt = Wavetable::new(num_tables, num_octaves, num_samples); // 256 tables, bandlimited for 11 octaves, with 2048 samples each
         let num_values = wt.num_values;
         Wavetable::add_sine_wave(&mut wt.get_wave_mut(i)[0..num_values], freq, amp, phase);
@@ -622,7 +596,6 @@ fn single_frequency_can_be_bandlimted() {
             if j == i {
                 continue;
             }
-            println!("Testing harmonics for table {}", j);
             for h in &harmonics[j] {
                 assert!(is_close_to(h.re, 0.0, 0.0000000001, j));
                 assert!(is_close_to(h.im, 0.0, 0.0000000001, j));
@@ -632,7 +605,6 @@ fn single_frequency_can_be_bandlimted() {
         let mut wt_new = Wavetable::new(num_tables, num_octaves, num_samples); // 256 tables, bandlimited for 11 octaves, with 2048 samples each
         wt_new.add_frequencies(&harmonics, sample_freq).unwrap();
         for j in 0..num_tables {
-            println!("Comparing wave {}", j);
             let t = &wt_new.get_wave(j);
             if j == i {
                 for (k, s) in wave_ref.iter().enumerate() {

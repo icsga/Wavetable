@@ -1,6 +1,6 @@
 [package]
 name = "wavetable"
-version = "0.1.3"
+version = "0.2.0"
 authors = ["ICS"]
 edition = "2018"
 license = "MIT"

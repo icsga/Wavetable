@@ -10,13 +10,10 @@ use super::{Wavetable, WavetableRef};
 use super::WtCreator;
 use super::WtReader;
 
-use log::{info, trace, warn};
 use serde::{Serialize, Deserialize};
 
 use std::collections::HashMap;
 use std::sync::Arc;
-
-const NUM_PWM_TABLES: usize = 64;
 
 /// Identifies a wavetable.
 ///
@@ -175,7 +172,6 @@ impl WtManager {
     /// ```
     pub fn load_table(&mut self, wt_info: &mut WtInfo, fallback: WavetableRef, bandlimit: bool) {
         let result = self.reader.read_file(&wt_info.filename, Some(2048));
-        println!("Loaded wave file {}", wt_info.filename);
         let table = if let Ok(wt) = result {
             wt_info.valid = true;
             if bandlimit {
